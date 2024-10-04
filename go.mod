@@ -59,6 +59,10 @@ require (
 	github.com/prometheus/client_golang v1.20.2
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cobra v1.8.1
+	github.com/fluxcd/pkg/http/fetch v0.12.0
+	github.com/fluxcd/pkg/runtime v0.49.0
+	github.com/fluxcd/pkg/tar v0.8.0
+	github.com/fluxcd/source-controller/api v1.3.0
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
 	github.com/stern/stern v1.30.0
@@ -85,6 +89,7 @@ require (
 	helm.sh/helm/v3 v3.15.4
 	k8s.io/api v0.30.3
 	k8s.io/apiextensions-apiserver v0.30.3
+	github.com/spf13/pflag v1.0.5
 	k8s.io/apimachinery v0.30.3
 	k8s.io/cli-runtime v0.30.3
 	k8s.io/client-go v0.30.3

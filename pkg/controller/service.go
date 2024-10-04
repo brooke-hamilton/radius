@@ -108,6 +108,8 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup %s controller: %w", "Deployment", err)
 	}
 
+	// Add flux here
+
 	if s.TLSCertDir == "" {
 		logger.Info("Webhooks will be skipped. TLS certificates not present.")
 	} else {
