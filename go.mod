@@ -219,7 +219,6 @@ require (
 	github.com/evanphx/json-patch/v5 v5.9.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20210407135951-1de76d718b3f // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fluxcd/source-watcher v1.1.0
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.4 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect

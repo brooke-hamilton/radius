@@ -23,6 +23,7 @@ import (
 	"github.com/radius-project/radius/pkg/armrpc/hostoptions"
 	radappiov1alpha3 "github.com/radius-project/radius/pkg/controller/api/radapp.io/v1alpha3"
 	"github.com/radius-project/radius/pkg/controller/reconciler"
+	"github.com/radius-project/radius/pkg/gitops/flux"
 	"github.com/radius-project/radius/pkg/ucp/hosting"
 	"github.com/radius-project/radius/pkg/ucp/ucplog"
 
@@ -108,7 +109,13 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup %s controller: %w", "Deployment", err)
 	}
 
-	// Add flux here
+	// Flux git repository watcher
+	err = (&flux.GitRepositoryWatcher{
+		Client: mgr.GetClient(),
+	}).SetupWithManager(mgr)
+	if err != nil {
+		return fmt.Errorf("failed to setup %s controller: %w", "GitRepositoryWatcher", err)
+	}
 
 	if s.TLSCertDir == "" {
 		logger.Info("Webhooks will be skipped. TLS certificates not present.")
