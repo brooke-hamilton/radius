@@ -178,7 +178,7 @@ jobs:
       - name: Set up Go ${{ env.GOVER }}
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GOVER }}
+          go-version-file: go.mod
           cache: true
 
       - name: Setup Node.js
