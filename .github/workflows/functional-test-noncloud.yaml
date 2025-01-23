@@ -120,7 +120,7 @@ jobs:
           echo "REL_VERSION=pr-${UNIQUE_ID}" >> $GITHUB_OUTPUT
           echo "DE_IMAGE=${{ env.DE_IMAGE }}" >> $GITHUB_OUTPUT
           echo "DE_TAG=${{ env.DE_TAG }}" >> $GITHUB_OUTPUT
-          echo "BICEP_RECIPE_TAG_VERSION=${{ needs.build.outputs.REL_VERSION }} >> $GITHUB_OUTPUT
+          echo "BICEP_RECIPE_TAG_VERSION=${{ needs.build.outputs.REL_VERSION }}" >> $GITHUB_OUTPUT
 
       - name: Set up checkout target (scheduled)
         if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch'
