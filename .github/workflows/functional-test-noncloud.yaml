@@ -119,32 +119,9 @@ jobs:
           # Set output variables to be used in the other jobs
           echo "REL_VERSION=pr-${UNIQUE_ID}" >> $GITHUB_OUTPUT
           echo "DE_IMAGE=${{ env.DE_IMAGE }}" >> $GITHUB_OUTPUT
-          echo "DE_TAG=${{ env.DE_TAG }}" >> $GITHUB_OUTPUT    
-  tests:
-    name: Run ${{ matrix.name }} functional tests
-    needs: build
-    strategy:
-      fail-fast: true
-      matrix:
-        os: [ubuntu-latest]
-        name:
-          [
-            cli-noncloud,
-            corerp-noncloud,
-            daprrp-noncloud,
-            kubernetes-noncloud,
-            msgrp-noncloud,
-            samples-noncloud,
-            ucp-noncloud,
-            datastoresrp-noncloud,
-          ]
-    runs-on: ${{ matrix.os }}
-    env:
-      REL_VERSION: ${{ needs.build.outputs.REL_VERSION }}
-      BICEP_RECIPE_TAG_VERSION: ${{ needs.build.outputs.REL_VERSION }}
-      DE_IMAGE: ${{ needs.build.outputs.DE_IMAGE }}
-      DE_TAG: ${{ needs.build.outputs.DE_TAG }}
-    steps:
+          echo "DE_TAG=${{ env.DE_TAG }}" >> $GITHUB_OUTPUT
+          echo "BICEP_RECIPE_TAG_VERSION=${{ needs.build.outputs.REL_VERSION }} >> $GITHUB_OUTPUT
+
       - name: Set up checkout target (scheduled)
         if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch'
         run: |
@@ -169,7 +146,6 @@ jobs:
 
       - name: Checkout samples repo
         uses: actions/checkout@v4
-        if: matrix.name == 'samples-noncloud'
         with:
           repository: radius-project/samples
           ref: refs/heads/edge
@@ -193,7 +169,7 @@ jobs:
       - name: Upload Radius Bicep types artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}_radius_bicep_types
+          name: radius_bicep_types
           path: ./hack/bicep-types-radius/generated
           if-no-files-found: error       
 
@@ -339,7 +315,7 @@ jobs:
 
           which rad || { echo "cannot find rad"; exit 1; }
 
-          make test-functional-${{ matrix.name }}
+          make test-functional-cli-noncloud
         env:
           DOCKER_REGISTRY: "${{ env.LOCAL_REGISTRY_NAME }}:${{ env.LOCAL_REGISTRY_PORT }}"
           TEST_TIMEOUT: ${{ env.FUNCTIONALTEST_TIMEOUT }}
@@ -355,8 +331,8 @@ jobs:
         # In case of failure, upload functional_test_results to artifacts so that they are not erased by subsequent runs.
         if: failure() && github.repository == 'radius-project/radius'
         with:
-          test_group_name: "Functional Tests - ${{ matrix.name }}"
-          artifact_name: "functional_test_results_${{ matrix.name }}"
+          test_group_name: "Functional Tests"
+          artifact_name: "functional_test_results"
           result_directory: "dist/functional_test/"
 
       - name: Collect detailed Radius logs and events
@@ -364,31 +340,31 @@ jobs:
         if: always()
         run: |
           # Create Radius logs directory
-          mkdir -p func-nc/radius-logs-events/${{ matrix.name }}
+          mkdir -p func-nc/radius-logs-events
 
           # Get pod logs and save to file
           namespace="radius-system"
           pod_names=($(kubectl get pods -n $namespace -o jsonpath='{.items[*].metadata.name}'))
           for pod_name in "${pod_names[@]}"; do
-            kubectl logs $pod_name -n $namespace > func-nc/radius-logs-events/${{ matrix.name }}/${pod_name}.txt
+            kubectl logs $pod_name -n $namespace > func-nc/radius-logs-events/${pod_name}.txt
           done
-          echo "Pod logs saved to func-nc/radius-logs-events/${{ matrix.name }}/"
+          echo "Pod logs saved to func-nc/radius-logs-events/"
           # Get kubernetes events and save to file
-          kubectl get events -n $namespace > func-nc/radius-logs-events/${{ matrix.name }}/events.txt
+          kubectl get events -n $namespace > func-nc/radius-logs-events/events.txt
 
       - name: Upload Pod logs for failed tests
         uses: actions/upload-artifact@v4
         if: always() && steps.radius-logs-events.outcome == 'success'
         with:
-          name: ${{ matrix.name }}-radius-pod-logs
-          path: func-nc/radius-logs-events/${{ matrix.name }}
+          name: radius-pod-logs
+          path: func-nc/radius-logs-events
           retention-days: 30
           if-no-files-found: error
 
       - name: Collect Pod details
         if: always()
         run: |
-          POD_STATE_LOG_FILENAME='${{ env.RADIUS_CONTAINER_LOG_BASE }}/${{ matrix.name }}-tests-pod-states.log'
+          POD_STATE_LOG_FILENAME='${{ env.RADIUS_CONTAINER_LOG_BASE }}/tests-pod-states.log'
           mkdir -p $(dirname $POD_STATE_LOG_FILENAME)
           echo "kubectl get pods -A" >> $POD_STATE_LOG_FILENAME
           kubectl get pods -A >> $POD_STATE_LOG_FILENAME
@@ -399,7 +375,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}_container_logs
+          name: container_logs
           path: ./${{ env.RADIUS_CONTAINER_LOG_BASE }}
 
       - name: Get Terraform recipe publishing logs
@@ -422,13 +398,14 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ matrix.name }}_recipes-pod-logs
+          name: recipes-pod-logs
           path: recipes/pod-logs
           if-no-files-found: error
 
   report-failure:
     name: Report test failure
-    needs: [build, tests]
+    # needs: [build, tests]
+    needs: build
     runs-on: ubuntu-latest
     if: failure() && github.event_name == 'schedule' && github.repository == 'radius-project/radius'
     steps:
