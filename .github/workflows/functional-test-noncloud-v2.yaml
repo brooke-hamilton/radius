@@ -1,0 +1,352 @@
+# ------------------------------------------------------------
+# Copyright 2023 The Radius Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ------------------------------------------------------------
+
+name: Functional Tests V2 (with Non-Cloud Resources)
+
+permissions:
+  id-token: write # Required for requesting the JWT
+  contents: read # Required for listing the commits
+  packages: write # Required for uploading the package
+  checks: write # Required for creating a check run
+
+on:
+  # Enable manual trigger
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run the workflow on"
+        required: true
+        default: "main"
+  schedule:
+    # Run every 4 hours on weekdays.
+    - cron: "30 0,4,8,12,16,20 * * 1-5"
+    # Run every 12 hours on weekends.
+    - cron: "30 0,12 * * 0,6"
+  # Dispatch on external events
+  repository_dispatch:
+    types: [de-functional-test]
+  pull_request:
+    branches:
+      - main
+      - features/*
+      - release/*
+
+env:
+  # Go version
+  GOVER: "1.22.5"
+  # Helm version
+  HELM_VER: "v3.15.3"
+  # KinD cluster version
+  KIND_VER: "v0.23.0"
+  # Kubectl version
+  KUBECTL_VER: "v1.30.0"
+
+  # The radius functional test timeout
+  FUNCTIONALTEST_TIMEOUT: 15m
+  # The base directory for storing test logs
+  RADIUS_CONTAINER_LOG_BASE: dist/container_logs
+  # The Radius helm chart location.
+  RADIUS_CHART_LOCATION: deploy/Chart/
+  # The current GitHub action link
+  ACTION_LINK: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  # Server where terraform test modules are deployed
+  TF_RECIPE_MODULE_SERVER_URL: "http://tf-module-server.radius-test-tf-module-server.svc.cluster.local"
+  # Private Git repository where terraform module for testing is stored.
+  TF_RECIPE_PRIVATE_GIT_SOURCE: "git::https://github.com/radius-project/terraform-private-modules//kubernetes-redis"
+  # Local Docker registry name
+  LOCAL_REGISTRY_NAME: "radius-registry"
+  # Local Docker registry server
+  LOCAL_REGISTRY_SERVER: "localhost"
+  # Local Docker registry port
+  LOCAL_REGISTRY_PORT: "5000"
+  # bicep-types ACR url for uploading Radius Bicep types
+  BICEP_TYPES_REGISTRY: 'biceptypes.azurecr.io'
+
+jobs:
+  build:
+    name: Build Radius for test
+    runs-on: ubuntu-latest
+    env:
+      DE_IMAGE: "ghcr.io/radius-project/deployment-engine"
+      DE_TAG: "latest"
+    outputs:
+      REL_VERSION: ${{ steps.gen-id.outputs.REL_VERSION }}
+      DE_IMAGE: ${{ steps.gen-id.outputs.DE_IMAGE }}
+      DE_TAG: ${{ steps.gen-id.outputs.DE_TAG }}
+    steps:
+      - name: Set DE image and tag (repository_dispatch from de-functional-test)
+        if: github.event_name == 'repository_dispatch'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_RAD_CI_BOT_PAT }}
+          script: |
+            const clientPayload = context.payload.client_payload;
+            if (clientPayload && clientPayload.event_type === `de-functional-test`) {
+              var fs = require('fs');
+              // Set environment variables
+              fs.appendFileSync(process.env.GITHUB_ENV,
+                `DE_IMAGE=${clientPayload.de_image}\n`+
+                `DE_TAG=${clientPayload.de_tag}\n`+
+                `CHECKOUT_REPO=${{ github.repository }}\n`+
+                `CHECKOUT_REF=refs/heads/main`
+              );
+            }
+
+      - name: Generate ID for release
+        id: gen-id
+        run: |
+          BASE_STR="RADIUS|${GITHUB_SHA}|${GITHUB_SERVER_URL}|${GITHUB_REPOSITORY}|${GITHUB_RUN_ID}|${GITHUB_RUN_ATTEMPT}"
+          if [ "$GITHUB_EVENT_NAME" == "schedule" ]; then
+            # Add run number to randomize unique id for scheduled runs.
+            BASE_STR="${GITHUB_RUN_NUMBER}|${BASE_STR}"
+          fi
+          UNIQUE_ID=func$(echo $BASE_STR | sha1sum | head -c 10)
+          echo "REL_VERSION=pr-${UNIQUE_ID}" >> $GITHUB_ENV
+
+          # Set output variables to be used in the other jobs
+          echo "REL_VERSION=pr-${UNIQUE_ID}" >> $GITHUB_OUTPUT
+          echo "DE_IMAGE=${{ env.DE_IMAGE }}" >> $GITHUB_OUTPUT
+          echo "DE_TAG=${{ env.DE_TAG }}" >> $GITHUB_OUTPUT    
+
+  tests:
+    name: Run ${{ matrix.name }} functional tests
+    needs: build
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest]
+        name:
+          [
+            cli-noncloud,
+            corerp-noncloud,
+            daprrp-noncloud,
+            kubernetes-noncloud,
+            msgrp-noncloud,
+            samples-noncloud,
+            ucp-noncloud,
+            datastoresrp-noncloud,
+          ]
+    runs-on: ${{ matrix.os }}
+    env:
+      REL_VERSION: ${{ needs.build.outputs.REL_VERSION }}
+      BICEP_RECIPE_TAG_VERSION: ${{ needs.build.outputs.REL_VERSION }}
+      DE_IMAGE: ${{ needs.build.outputs.DE_IMAGE }}
+      DE_TAG: ${{ needs.build.outputs.DE_TAG }}
+      TEMP_CERT_DIR: ""
+    steps:
+      # ---------- GITHUB WORKFLOW SETUP ----------
+      - name: Set up checkout target (scheduled)
+        if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch'
+        run: |
+          echo "CHECKOUT_REPO=${{ github.repository }}" >> $GITHUB_ENV
+          echo "CHECKOUT_REF=refs/heads/main" >> $GITHUB_ENV
+
+      - name: Set up checkout target (pull_request)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "CHECKOUT_REPO=${{ github.repository }}" >> $GITHUB_ENV
+          echo "CHECKOUT_REF=${{ github.ref }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+
+      - name: Set up checkout target (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "CHECKOUT_REPO=${{ github.repository }}" >> $GITHUB_ENV
+          echo "CHECKOUT_REF=refs/heads/${{ github.event.inputs.branch }}" >> $GITHUB_ENV
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Checkout samples repo
+        uses: actions/checkout@v4
+        if: matrix.name == 'samples-noncloud'
+        with:
+          repository: radius-project/samples
+          ref: refs/heads/edge
+          path: samples
+
+      - name: Set up Go ${{ env.GOVER }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GOVER }}
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install required tools
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/${{ env.KUBECTL_VER }}/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+          
+          # Install Kind
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${{ env.KIND_VER }}/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          
+          # Install bicep CLI
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x ./bicep
+          sudo mv ./bicep /usr/local/bin/bicep
+          
+          # Install Helm
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh --version ${{ env.HELM_VER }}
+          rm get_helm.sh
+
+      # ---------- CORE LOGIC SETUP ----------
+      - name: Build and Install rad CLI
+        run: |
+          make build
+          mkdir -p ./bin
+          cp ./dist/linux_amd64/release/rad ./bin/rad
+          chmod +x ./bin/rad
+          export PATH=$GITHUB_WORKSPACE/bin:$PATH
+          rad bicep download
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+
+      - name: Generate Bicep extensibility types
+        run: |
+          make generate-bicep-types VERSION=${{ env.REL_VERSION == 'edge' && 'latest' || env.REL_VERSION }}
+
+      - name: Upload Radius Bicep types artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}_radius_bicep_types
+          path: ./hack/bicep-types-radius/generated
+          if-no-files-found: error       
+
+      - name: Create local registry and Kind cluster
+        run: |
+          # Export variables needed by make commands
+          export TEMP_CERT_DIR=$(mktemp -d)
+          echo "TEMP_CERT_DIR=$TEMP_CERT_DIR" >> $GITHUB_ENV
+          
+          make create-local-registry
+          make create-kind-cluster
+
+      - name: Build and Push container images
+        run: |
+          make docker-build && make docker-push
+        env:
+          DOCKER_REGISTRY: "${{ env.LOCAL_REGISTRY_SERVER }}:${{ env.LOCAL_REGISTRY_PORT }}"
+          DOCKER_TAG_VERSION: ${{ env.REL_VERSION }}
+
+      - name: Install Radius
+        run: |
+          make install-radius-for-test
+        env:
+          LOCAL_REGISTRY_NAME: ${{ env.LOCAL_REGISTRY_SERVER }}
+          LOCAL_REGISTRY_PORT: ${{ env.LOCAL_REGISTRY_PORT }}
+          REL_VERSION: ${{ env.REL_VERSION }}
+          DE_IMAGE: ${{ env.DE_IMAGE }}
+          DE_TAG: ${{ env.DE_TAG }}
+          TEMP_CERT_DIR: ${{ env.TEMP_CERT_DIR }}
+
+      - name: Publish test recipes
+        run: |
+          # Publish Terraform test recipes
+          make publish-test-terraform-recipes
+          
+          # Generate test bicepconfig.json
+          make generate-test-bicepconfig
+          
+          # Publish Bicep types and test recipes
+          export SSL_CERT_FILE=${{ env.TEMP_CERT_DIR }}/certs/${{ env.LOCAL_REGISTRY_SERVER }}/client.crt
+          bicep publish-extension ./hack/bicep-types-radius/generated/index.json --target br:${{ env.LOCAL_REGISTRY_SERVER }}:${{ env.LOCAL_REGISTRY_PORT }}/radius:${{ env.REL_VERSION == 'edge' && 'latest' || env.REL_VERSION }} --force
+          
+          make publish-test-bicep-recipes
+        env:
+          LOCAL_REGISTRY_SERVER: ${{ env.LOCAL_REGISTRY_SERVER }}
+          LOCAL_REGISTRY_PORT: ${{ env.LOCAL_REGISTRY_PORT }}
+          REL_VERSION: ${{ env.REL_VERSION }}
+          BICEP_RECIPE_REGISTRY: "${{ env.LOCAL_REGISTRY_SERVER }}:${{ env.LOCAL_REGISTRY_PORT }}"
+          BICEP_RECIPE_TAG_VERSION: ${{ env.REL_VERSION }}
+          BICEP_TYPES_REGISTRY: ${{ env.BICEP_TYPES_REGISTRY }}
+
+      # ---------- CORE LOGIC EXECUTION ----------
+      - name: Run functional tests
+        id: run-tests
+        run: |
+          # Run the functional tests using the appropriate make command
+          make test-functional-${{ matrix.name }}
+        env:
+          DOCKER_REGISTRY: "${{ env.LOCAL_REGISTRY_SERVER }}:${{ env.LOCAL_REGISTRY_PORT }}"
+          TEST_TIMEOUT: ${{ env.FUNCTIONALTEST_TIMEOUT }}
+          RADIUS_CONTAINER_LOG_PATH: ${{ github.workspace }}/${{ env.RADIUS_CONTAINER_LOG_BASE }}
+          RADIUS_SAMPLES_REPO_ROOT: ${{ github.workspace }}/samples
+          BICEP_RECIPE_REGISTRY: "${{ env.LOCAL_REGISTRY_NAME }}:${{ env.LOCAL_REGISTRY_PORT }}"
+          BICEP_RECIPE_TAG_VERSION: ${{ env.BICEP_RECIPE_TAG_VERSION }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOTESTSUM_OPTS: "--junitfile ./dist/functional_test/results.xml"
+
+      # ---------- WORKFLOW CLEANUP ----------
+      - name: Process Functional Test Results
+        uses: ./.github/actions/process-test-results
+        if: always() && github.repository == 'radius-project/radius'
+        with:
+          test_group_name: "Functional Tests V2 - ${{ matrix.name }}"
+          artifact_name: "functional_test_results_v2_${{ matrix.name }}"
+          result_directory: "dist/functional_test/"
+
+      - name: Collect logs for debugging
+        if: always()
+        run: |
+          # Collect all types of logs
+          mkdir -p ${{ env.RADIUS_CONTAINER_LOG_BASE }}/${{ matrix.name }}
+          make collect-radius-logs RADIUS_CONTAINER_LOG_BASE=${{ env.RADIUS_CONTAINER_LOG_BASE }}/${{ matrix.name }}
+          make collect-pod-details RADIUS_CONTAINER_LOG_BASE=${{ env.RADIUS_CONTAINER_LOG_BASE }}/${{ matrix.name }}
+          make collect-recipe-logs RADIUS_CONTAINER_LOG_BASE=${{ env.RADIUS_CONTAINER_LOG_BASE }}/${{ matrix.name }}
+
+      - name: Upload container logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}_container_logs_v2
+          path: ./${{ env.RADIUS_CONTAINER_LOG_BASE }}/${{ matrix.name }}
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Clean up test environment
+        if: always()
+        run: |
+          make cleanup-functional-test-env
+        env:
+          LOCAL_REGISTRY_NAME: ${{ env.LOCAL_REGISTRY_NAME }}
+          TEMP_CERT_DIR: ${{ env.TEMP_CERT_DIR }}
+
+  report-failure:
+    name: Report test failure
+    needs: [build, tests]
+    runs-on: ubuntu-latest
+    if: failure() && github.event_name == 'schedule' && github.repository == 'radius-project/radius'
+    steps:
+      - name: Create failure issue for failing scheduled run
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GH_RAD_CI_BOT_PAT }}
+          script: |
+            github.rest.issues.create({
+              ...context.repo,
+              title: `Scheduled functional test V2 (noncloud) failed - Run ID: ${context.runId}`,
+              labels: ['test-failure'],
+              body: `## Bug information \n\nThis issue is automatically generated if the scheduled functional test fails. The Radius functional test operates on a schedule of every 4 hours during weekdays and every 12 hours over the weekend. It's important to understand that the test may fail due to workflow infrastructure issues, like network problems, rather than the flakiness of the test itself. For the further investigation, please visit [here](${process.env.ACTION_LINK}).`
+            })

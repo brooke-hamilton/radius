@@ -128,4 +128,128 @@ test-ucp-spec-examples: oav-installed ## Validates UCP examples conform to UCP O
 	# @echo "$(ARROW) Testing x-ms-examples conform to ucp spec..."
 	# oav validate-example swagger/specification/ucp/resource-manager/UCP/preview/2023-10-01-preview/openapi.json
 
+##@ Functional Test Environment Setup
+
+.PHONY: setup-functional-test-env
+setup-functional-test-env: ## Setup environment for functional tests
+	@echo "$(ARROW) Setting up functional test environment..."
+	$(eval TEMP_CERT_DIR := $(shell mktemp -d))
+	@echo "Created temporary certificate directory: $(TEMP_CERT_DIR)"
+
+.PHONY: create-local-registry
+create-local-registry: ## Create a local Docker registry for testing
+	@echo "$(ARROW) Creating secure local registry..."
+	@mkdir -p $(TEMP_CERT_DIR)/certs/$(LOCAL_REGISTRY_SERVER)
+	@openssl req -x509 -newkey rsa:4096 -days 1 -nodes \
+		-subj "/CN=$(LOCAL_REGISTRY_SERVER)" \
+		-out $(TEMP_CERT_DIR)/certs/$(LOCAL_REGISTRY_SERVER)/client.crt \
+		-keyout $(TEMP_CERT_DIR)/certs/$(LOCAL_REGISTRY_SERVER)/client.key
+
+	@docker network create radius-test-network || true
+	@docker run -d --name $(LOCAL_REGISTRY_NAME) \
+		--network=radius-test-network \
+		-p $(LOCAL_REGISTRY_PORT):5000 \
+		-v $(TEMP_CERT_DIR)/certs:/certs \
+		-e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/$(LOCAL_REGISTRY_SERVER)/client.crt \
+		-e REGISTRY_HTTP_TLS_KEY=/certs/$(LOCAL_REGISTRY_SERVER)/client.key \
+		registry:2
+
+.PHONY: create-kind-cluster
+create-kind-cluster: ## Create a KinD cluster with a local registry
+	@echo "$(ARROW) Creating KinD cluster with local registry..."
+	@kind create cluster --name radius-test --config - <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraMounts:
+  - hostPath: $(TEMP_CERT_DIR)/certs
+    containerPath: /etc/docker/certs.d/$(LOCAL_REGISTRY_SERVER):$(LOCAL_REGISTRY_PORT)
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."$(LOCAL_REGISTRY_SERVER):$(LOCAL_REGISTRY_PORT)"]
+    endpoint = ["https://$(LOCAL_REGISTRY_SERVER):$(LOCAL_REGISTRY_PORT)"]
+EOF
+	@kubectl cluster-info --context kind-radius-test
+
+.PHONY: install-radius-for-test
+install-radius-for-test: ## Install Radius in the test cluster
+	@echo "$(ARROW) Installing Radius to Kubernetes..."
+	rad install kubernetes \
+		--chart $(RADIUS_CHART_LOCATION) \
+		--set rp.image=$(LOCAL_REGISTRY_NAME):$(LOCAL_REGISTRY_PORT)/applications-rp,rp.tag=$(REL_VERSION) \
+		--set dynamicrp.image=$(LOCAL_REGISTRY_NAME):$(LOCAL_REGISTRY_PORT)/dynamic-rp,dynamicrp.tag=$(REL_VERSION) \
+		--set controller.image=$(LOCAL_REGISTRY_NAME):$(LOCAL_REGISTRY_PORT)/controller,controller.tag=$(REL_VERSION) \
+		--set ucp.image=$(LOCAL_REGISTRY_NAME):$(LOCAL_REGISTRY_PORT)/ucpd,ucp.tag=$(REL_VERSION) \
+		--set de.image=$(DE_IMAGE),de.tag=$(DE_TAG) \
+		--set-file global.rootCA.cert=$(TEMP_CERT_DIR)/certs/$(LOCAL_REGISTRY_SERVER)/client.crt
+	
+	@echo "$(ARROW) Creating workspace, group and environment for test..."
+	rad workspace create kubernetes
+	rad group create kind-radius
+	rad group switch kind-radius
+	rad env create kind-radius --namespace default
+	rad env switch kind-radius
+
+.PHONY: setup-test-recipes
+setup-test-recipes: ## Set up test recipes for functional tests
+	@echo "$(ARROW) Publishing test recipes..."
+	make publish-test-terraform-recipes
+	make publish-test-bicep-recipes
+
+.PHONY: generate-test-bicepconfig
+generate-test-bicepconfig: ## Generate bicepconfig.json for testing
+	@echo "$(ARROW) Generating test bicepconfig.json..."
+	@if [[ "$(REL_VERSION)" == "edge" ]]; then \
+		RADIUS_VERSION="latest"; \
+	else \
+		RADIUS_VERSION="$(REL_VERSION)"; \
+	fi; \
+	cat > ./test/bicepconfig.json << EOF
+{
+  "experimentalFeaturesEnabled": {
+    "extensibility": true
+  },
+  "extensions": {
+    "radius": "br:$(LOCAL_REGISTRY_SERVER):$(LOCAL_REGISTRY_PORT)/radius:$$RADIUS_VERSION",
+    "aws": "br:$(BICEP_TYPES_REGISTRY)/aws:latest"
+  }
+}
+EOF
+
+.PHONY: collect-radius-logs
+collect-radius-logs: ## Collect Radius logs for debugging
+	@echo "$(ARROW) Collecting Radius logs and events..."
+	@mkdir -p $(RADIUS_CONTAINER_LOG_BASE)/radius-logs-events
+	@for pod_name in $$(kubectl get pods -n radius-system -o jsonpath='{.items[*].metadata.name}'); do \
+		kubectl logs $$pod_name -n radius-system > $(RADIUS_CONTAINER_LOG_BASE)/radius-logs-events/$$pod_name.txt; \
+	done
+	@kubectl get events -n radius-system > $(RADIUS_CONTAINER_LOG_BASE)/radius-logs-events/events.txt
+
+.PHONY: collect-pod-details
+collect-pod-details: ## Collect pod details for debugging
+	@echo "$(ARROW) Collecting pod details..."
+	@mkdir -p $(RADIUS_CONTAINER_LOG_BASE)
+	@echo "kubectl get pods -A" >> $(RADIUS_CONTAINER_LOG_BASE)/pod-states.log
+	@kubectl get pods -A >> $(RADIUS_CONTAINER_LOG_BASE)/pod-states.log
+	@echo "kubectl describe pods -A" >> $(RADIUS_CONTAINER_LOG_BASE)/pod-states.log
+	@kubectl describe pods -A >> $(RADIUS_CONTAINER_LOG_BASE)/pod-states.log
+
+.PHONY: collect-recipe-logs
+collect-recipe-logs: ## Collect recipe publishing logs
+	@echo "$(ARROW) Collecting recipe logs..."
+	@mkdir -p $(RADIUS_CONTAINER_LOG_BASE)/recipe-logs
+	@for pod_name in $$(kubectl get pods -l app.kubernetes.io/name=tf-module-server -n radius-test-tf-module-server -o jsonpath='{.items[*].metadata.name}'); do \
+		kubectl logs $$pod_name -n radius-test-tf-module-server > $(RADIUS_CONTAINER_LOG_BASE)/recipe-logs/$$pod_name.txt; \
+	done
+	@kubectl get events -n radius-test-tf-module-server > $(RADIUS_CONTAINER_LOG_BASE)/recipe-logs/events.txt
+
+.PHONY: cleanup-functional-test-env
+cleanup-functional-test-env: ## Clean up functional test environment
+	@echo "$(ARROW) Cleaning up functional test environment..."
+	@kind delete cluster --name radius-test || true
+	@docker rm -f $(LOCAL_REGISTRY_NAME) || true
+	@docker network rm radius-test-network || true
+	@rm -rf $(TEMP_CERT_DIR) || true
+
 
