@@ -1,0 +1,16 @@
+name: 'Checkout Repository'
+description: 'Checks out the repository with optional commit hash specification'
+
+inputs:
+  commit-hash:
+    description: 'The commit hash to checkout. If not provided, it will checkout the latest version'
+    required: false
+    default: ''
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check out repo
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.commit-hash != '' && inputs.commit-hash || '' }}

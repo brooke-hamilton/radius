@@ -1,0 +1,20 @@
+name: 'Exit Workflow When Scheduled on a Forks'
+description: 'Exits a scheduled workflow if running on a fork repository'
+inputs:
+  upstream_owner:
+    description: 'The name of the upstream repository owner'
+    required: true
+    default: 'radius-project'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check if fork and scheduled event
+      shell: bash
+      run: |
+        if [[ "${{ github.event_name }}" == "schedule" && "${{ github.repository_owner }}" != "${{ inputs.upstream_owner }}" ]]; then
+          echo "This is a fork. Exiting scheduled workflow..."
+          exit 0
+        else
+          echo "Not a scheduled event on a fork, continuing workflow..."
+        fi
