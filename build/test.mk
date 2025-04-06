@@ -131,4 +131,21 @@ test-ucp-spec-examples: oav-installed ## Validates UCP examples conform to UCP O
 	# @echo "$(ARROW) Testing x-ms-examples conform to ucp spec..."
 	# oav validate-example swagger/specification/ucp/resource-manager/UCP/preview/2023-10-01-preview/openapi.json
 
+# Long-running release test targets
+.PHONY: test-long-running-setup
+test-long-running-setup: ## Setup the environment for long-running tests
+	chmod +x ./.github/scripts/check-radius-release.sh
+	chmod +x ./.github/scripts/cleanup-radius-complete.sh
+	chmod +x ./.github/scripts/collect-radius-metrics.sh
+	mkdir -p ./dist/metrics
+
+.PHONY: test-long-running-workload
+test-long-running-workload: ## Run a workload that simulates long-running usage patterns
+	CGO_ENABLED=1 $(GOTEST_TOOL) ./test/functional-portable/corerp/noncloud/... -timeout 30m -v -parallel 5 $(GOTEST_OPTS)
+	CGO_ENABLED=1 $(GOTEST_TOOL) ./test/functional-portable/kubernetes/noncloud/... -timeout 30m -v -parallel 5 $(GOTEST_OPTS)
+	
+.PHONY: test-collect-metrics
+test-collect-metrics: ## Collect metrics from the long-running test environment
+	./.github/scripts/collect-radius-metrics.sh ./dist/metrics radius-system
+
 

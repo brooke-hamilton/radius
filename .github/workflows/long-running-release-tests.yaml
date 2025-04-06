@@ -1,0 +1,487 @@
+# ------------------------------------------------------------
+# Copyright 2025 The Radius Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ------------------------------------------------------------
+
+# This workflow performs long-running tests on a pre-provisioned AKS cluster
+# to detect memory leaks and performance issues. It runs on the latest released
+# version of Radius, performing a complete reinstall when a new version is detected.
+#
+# Unlike the previous long-running test workflow, this focuses specifically on:
+# 1. Detecting memory leaks and performance issues
+# 2. Emulating long-haul customer environments with production-level configurations
+# 3. Testing version upgrade handling
+#
+# The workflow will:
+# - Run daily to check for new Radius releases
+# - When a new release is detected, perform a full uninstall and clean install
+# - Continue running tests on the installed version until a new release is detected
+# - Collect performance metrics and report any issues
+#
+# Grafana dashboard URL: https://radlrtest00-dashboard-e4ffc0cwggchdhba.wus3.grafana.azure.com
+
+name: Long-running release tests
+
+permissions:
+  id-token: write # Required for requesting the JWT
+  contents: read # Required for actions/checkout
+  issues: write # Required for creating issues
+
+on:
+  # Enable manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      force-new-release:
+        description: 'Force treating as a new release (true/false)'
+        required: false
+        default: 'false'
+        type: string
+  # Run daily to check for new releases
+  schedule:
+    - cron: "0 0 * * *"
+  # Run on all branches (for testing from forks)
+  # This allows the workflow to be tested on any branch, not just main
+  pull_request:
+    paths:
+      - '.github/workflows/long-running-release-tests.yaml'
+      - '.github/scripts/check-radius-release.sh'
+      - '.github/scripts/cleanup-radius-complete.sh'
+      - '.github/scripts/collect-radius-metrics.sh'
+      - 'build/test.mk'
+
+env:
+  # The Azure Location to store test resources
+  AZURE_LOCATION: westus3
+  
+  # The AKS cluster name
+  AKS_CLUSTER_NAME: "radlrtest00-aks"
+  # The resource group for AKS_CLUSTER_NAME resource.
+  AKS_RESOURCE_GROUP: "radlrtest00"
+  
+  # The Radius test environment name
+  RADIUS_TEST_ENVIRONMENT_NAME: "kind-radius"
+  
+  # The current GitHub action link
+  ACTION_LINK: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  
+  # The metrics directory
+  METRICS_DIR: "./dist/metrics"
+
+jobs:
+  check-release:
+    name: Check for new Radius release
+    runs-on: ubuntu-latest
+    outputs:
+      NEW_RELEASE: ${{ steps.check-release.outputs.NEW_RELEASE }}
+      RADIUS_VERSION: ${{ steps.check-release.outputs.RADIUS_VERSION }}
+      UNIQUE_ID: ${{ steps.gen-id.outputs.UNIQUE_ID }}
+      RESOURCE_GROUP: ${{ steps.gen-id.outputs.RESOURCE_GROUP }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      
+      - name: Restore cache directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ./dist/cache
+          key: radius-release-test-
+      
+      - name: Setup scripts for execution
+        run: |
+          chmod +x ./.github/scripts/check-radius-release.sh
+      
+      - name: Check for new Radius release
+        id: check-release
+        run: |
+          ./.github/scripts/check-radius-release.sh
+          
+          # When manually triggered with force-new-release, override the NEW_RELEASE flag
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force-new-release }}" = "true" ]; then
+            echo "Forcing new release detection due to workflow_dispatch input"
+            echo "NEW_RELEASE=true" >> $GITHUB_ENV
+            echo "NEW_RELEASE=true" >> $GITHUB_OUTPUT
+          else
+            echo "NEW_RELEASE=$NEW_RELEASE" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "RADIUS_VERSION=$RADIUS_VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Generate unique ID for test resources
+        id: gen-id
+        run: |
+          if [[ "${{ env.NEW_RELEASE }}" == "true" || "${{ github.event_name }}" == "pull_request" ]]; then
+            # Generate a unique ID for resource naming
+            UNIQUE_ID=lr$(echo "${{ github.run_id }}-${{ github.run_number }}" | md5sum | head -c 10)
+            echo "UNIQUE_ID=$UNIQUE_ID" >> $GITHUB_OUTPUT
+            echo "RESOURCE_GROUP=radtest-$UNIQUE_ID" >> $GITHUB_OUTPUT
+          else
+            # Use existing resource group name from cache if available
+            if [ -f ./dist/cache/.resource_group ]; then
+              RESOURCE_GROUP=$(cat ./dist/cache/.resource_group)
+              echo "Using existing resource group: $RESOURCE_GROUP"
+            else
+              # If no resource group in cache, generate a new one
+              UNIQUE_ID=lr$(echo "${{ github.run_id }}-${{ github.run_number }}" | md5sum | head -c 10)
+              RESOURCE_GROUP=radtest-$UNIQUE_ID
+              echo "No resource group found in cache, creating new one: $RESOURCE_GROUP"
+            fi
+            
+            echo "UNIQUE_ID=$UNIQUE_ID" >> $GITHUB_OUTPUT
+            echo "RESOURCE_GROUP=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Save resource group name to cache
+        if: env.NEW_RELEASE == 'true' || github.event_name == 'pull_request'
+        run: |
+          mkdir -p ./dist/cache
+          echo "${{ steps.gen-id.outputs.RESOURCE_GROUP }}" > ./dist/cache/.resource_group
+      
+      - name: Store cache
+        uses: actions/cache/save@v4
+        with:
+          path: ./dist/cache
+          key: radius-release-test-${{ github.sha }}-${{ github.run_number }}
+      
+      - name: Log release check summary
+        run: |
+          cat <<EOF >> $GITHUB_STEP_SUMMARY
+          ## Radius Release Check
+          
+          | Name | Value |
+          |------|-------|
+          | **Latest Version** | ${{ env.RADIUS_VERSION }} |
+          | **New Release Detected** | ${{ env.NEW_RELEASE }} |
+          | **Test Resource Group** | ${{ steps.gen-id.outputs.RESOURCE_GROUP }} |
+          | **Unique ID** | ${{ steps.gen-id.outputs.UNIQUE_ID }} |
+          
+          EOF
+
+  setup:
+    name: Setup test environment
+    needs: check-release
+    runs-on: ubuntu-latest-m
+    if: github.repository == 'radius-project/radius' || github.event_name == 'pull_request'
+    env:
+      NEW_RELEASE: ${{ needs.check-release.outputs.NEW_RELEASE }}
+      RADIUS_VERSION: ${{ needs.check-release.outputs.RADIUS_VERSION }}
+      UNIQUE_ID: ${{ needs.check-release.outputs.UNIQUE_ID }}
+      RESOURCE_GROUP: ${{ needs.check-release.outputs.RESOURCE_GROUP }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      
+      - name: Setup Azure CLI
+        run: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_SP_TESTS_APPID }}
+          tenant-id: ${{ secrets.AZURE_SP_TESTS_TENANTID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }}
+      
+      - name: Create Azure resource group
+        run: |
+          current_time=$(date +%s)
+          az group create \
+            --location ${{ env.AZURE_LOCATION }} \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --subscription ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }} \
+            --tags creationTime=$current_time purpose=radius-long-running-test
+          
+          while [ $(az group exists --name ${{ env.RESOURCE_GROUP }}) = false ]; do 
+            sleep 2
+          done
+      
+      - name: Get kubeconfig credential for AKS cluster
+        run: |
+          az aks get-credentials \
+            --subscription ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }} \
+            --resource-group ${{ env.AKS_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} --admin
+      
+      - name: Setup shell scripts for execution
+        run: |
+          chmod +x ./.github/scripts/cleanup-radius-complete.sh
+          chmod +x ./.github/scripts/collect-radius-metrics.sh
+      
+      - name: Clean up previous Radius installation if new release
+        if: env.NEW_RELEASE == 'true' || github.event_name == 'pull_request'
+        run: |
+          echo "New Radius version detected: ${{ env.RADIUS_VERSION }}"
+          echo "Performing complete cleanup of previous Radius installation..."
+          ./.github/scripts/cleanup-radius-complete.sh
+      
+      - name: Download Radius CLI
+        run: |
+          echo "Downloading Radius CLI version ${{ env.RADIUS_VERSION }}..."
+          mkdir -p ./bin
+          
+          # Download the rad CLI from GitHub releases
+          curl -L -o ./bin/rad "https://github.com/radius-project/radius/releases/download/${{ env.RADIUS_VERSION }}/rad_linux_amd64"
+          chmod +x ./bin/rad
+          ./bin/rad version
+      
+      - name: Install Radius
+        run: |
+          export PATH=$GITHUB_WORKSPACE/bin:$PATH
+          
+          # Download Bicep
+          rad bicep download
+          
+          echo "Installing Radius ${{ env.RADIUS_VERSION }} to Kubernetes cluster..."
+          rad install kubernetes --reinstall
+      
+      - name: Verify Radius installation
+        run: |
+          # Wait for Radius pods to be ready
+          echo "Waiting for Radius pods to be ready..."
+          kubectl wait --for=condition=ready pods -l radapp.io/name=radius -n radius-system --timeout=5m
+          
+          # Verify Radius is running
+          echo "Verifying Radius installation..."
+          export PATH=$GITHUB_WORKSPACE/bin:$PATH
+          rad version
+          rad env list
+      
+      - name: Create Radius test workspace
+        run: |
+          export PATH=$GITHUB_WORKSPACE/bin:$PATH
+          
+          echo "Creating workspace, group and environment for test..."
+          rad workspace create kubernetes --force
+          rad group create ${{ env.RADIUS_TEST_ENVIRONMENT_NAME }}
+          rad group switch ${{ env.RADIUS_TEST_ENVIRONMENT_NAME }}
+          
+          rad env create ${{ env.RADIUS_TEST_ENVIRONMENT_NAME }} --namespace default
+          rad env switch ${{ env.RADIUS_TEST_ENVIRONMENT_NAME }}
+          
+          echo "Configuring Azure provider..."
+          rad env update ${{ env.RADIUS_TEST_ENVIRONMENT_NAME }} \
+            --azure-subscription-id ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }} \
+            --azure-resource-group ${{ env.RESOURCE_GROUP }}
+          
+          rad credential register azure sp \
+            --client-id ${{ secrets.AZURE_SP_TESTS_APPID }} \
+            --client-secret ${{ secrets.INTEGRATION_TEST_SP_PASSWORD }} \
+            --tenant-id ${{ secrets.AZURE_SP_TESTS_TENANTID }}
+      
+      - name: Cache rad CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: rad-cli
+          path: ./bin/rad
+          retention-days: 1
+      
+      - name: Log setup status
+        run: |
+          kubectl get pods -n radius-system
+          
+          cat <<EOF >> $GITHUB_STEP_SUMMARY
+          ## Environment Setup Summary
+          
+          | Name | Value |
+          |------|-------|
+          | **Radius Version** | ${{ env.RADIUS_VERSION }} |
+          | **Resource Group** | ${{ env.RESOURCE_GROUP }} |
+          | **AKS Cluster** | ${{ env.AKS_CLUSTER_NAME }} in ${{ env.AKS_RESOURCE_GROUP }} |
+          
+          ### Radius Pods
+          
+          \`\`\`
+          $(kubectl get pods -n radius-system)
+          \`\`\`
+          EOF
+
+  test:
+    name: Run long-running tests
+    needs: [check-release, setup]
+    runs-on: ubuntu-latest-m
+    if: github.repository == 'radius-project/radius' || github.event_name == 'pull_request'
+    env:
+      NEW_RELEASE: ${{ needs.check-release.outputs.NEW_RELEASE }}
+      RADIUS_VERSION: ${{ needs.check-release.outputs.RADIUS_VERSION }}
+      UNIQUE_ID: ${{ needs.check-release.outputs.UNIQUE_ID }}
+      RESOURCE_GROUP: ${{ needs.check-release.outputs.RESOURCE_GROUP }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+      
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+      
+      - name: Setup Azure CLI
+        run: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_SP_TESTS_APPID }}
+          tenant-id: ${{ secrets.AZURE_SP_TESTS_TENANTID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }}
+      
+      - name: Get kubeconfig credential for AKS cluster
+        run: |
+          az aks get-credentials \
+            --subscription ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }} \
+            --resource-group ${{ env.AKS_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER_NAME }} --admin
+      
+      - name: Download rad CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: rad-cli
+          path: ./bin
+      
+      - name: Make rad CLI executable
+        run: chmod +x ./bin/rad
+      
+      - name: Install test tools
+        run: |
+          go install gotest.tools/gotestsum@latest
+      
+      - name: Setup environment for long-running tests
+        run: |
+          export PATH=$GITHUB_WORKSPACE/bin:$PATH
+          make test-long-running-setup
+      
+      - name: Collect initial metrics
+        run: make test-collect-metrics
+      
+      - name: Run long-running test workload
+        timeout-minutes: 60
+        run: |
+          export PATH=$GITHUB_WORKSPACE/bin:$PATH
+          # Set environment variable for tests to know they're running in long-running mode
+          export RADIUS_LONG_RUNNING_TEST=true
+          make test-long-running-workload
+      
+      - name: Collect metrics after tests
+        if: always()
+        run: make test-collect-metrics
+      
+      - name: Process and analyze metrics
+        if: always()
+        run: |
+          echo "Processing and analyzing metrics..."
+          
+          # Check for pod restarts
+          RESTARTS=$(grep -o '[0-9]\+' ${{ env.METRICS_DIR }}/pod_info_*.txt | awk '{s+=$1} END {print s}')
+          
+          # Generate a summary of the metrics
+          echo "## Long-Running Test Metrics" > metrics_summary.md
+          echo "" >> metrics_summary.md
+          echo "| Metric | Value |" >> metrics_summary.md
+          echo "|--------|-------|" >> metrics_summary.md
+          echo "| **Radius Version** | ${{ env.RADIUS_VERSION }} |" >> metrics_summary.md
+          echo "| **Pod Restarts** | $RESTARTS |" >> metrics_summary.md
+          echo "| **Test Duration** | 60 minutes |" >> metrics_summary.md
+          
+          cat metrics_summary.md >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload metrics artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-metrics-${{ env.RADIUS_VERSION }}-${{ github.run_number }}
+          path: ${{ env.METRICS_DIR }}
+          retention-days: 7
+      
+      - name: Check for issues
+        if: always()
+        id: check-issues
+        run: |
+          # Check if pod restarts happened
+          RESTARTS=$(grep -o '[0-9]\+' ${{ env.METRICS_DIR }}/pod_info_*.txt | awk '{s+=$1} END {print s}')
+          if [ "$RESTARTS" -gt 0 ]; then
+            echo "Pod restarts detected: $RESTARTS"
+            echo "ISSUE_DETECTED=true" >> $GITHUB_OUTPUT
+            echo "ISSUE_SUMMARY=Pod restarts detected: $RESTARTS" >> $GITHUB_OUTPUT
+          else
+            echo "No pod restarts detected."
+            echo "ISSUE_DETECTED=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create issue if problems detected
+        if: steps.check-issues.outputs.ISSUE_DETECTED == 'true' && github.repository == 'radius-project/radius' && github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.create({
+              ...context.repo,
+              title: `Long-running test detected performance issue in ${process.env.RADIUS_VERSION}`,
+              labels: ['performance', 'long-running-test'],
+              body: `## Performance Issue Detected
+
+              The long-running test has detected a potential performance issue in Radius version ${process.env.RADIUS_VERSION}.
+
+              **Issue Summary:** ${process.env.ISSUE_SUMMARY}
+
+              **Run Details:**
+              - Run ID: ${context.runId}
+              - Run URL: ${process.env.ACTION_LINK}
+              - Radius Version: ${process.env.RADIUS_VERSION}
+
+              Please investigate the performance metrics uploaded as artifacts to this run.
+              `
+            })
+      
+      - name: Log test status (success)
+        if: success()
+        run: |
+          echo "✅ Long-running test completed successfully" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Log test status (failure)
+        if: failure()
+        run: |
+          echo "❌ Long-running test failed" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Clean up test resources
+        if: always()
+        run: |
+          echo "Cleaning up test resources..."
+          
+          # Delete application resources but leave the Radius system in place
+          # for the next run if not a PR
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "PR run - performing complete cleanup"
+            ./.github/scripts/cleanup-radius-complete.sh
+            
+            # Delete Azure resource group for PR runs
+            az group delete \
+              --subscription ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }} \
+              --name ${{ env.RESOURCE_GROUP }} \
+              --yes --verbose
+          else
+            echo "Regular run - cleaning application resources only"
+            export PATH=$GITHUB_WORKSPACE/bin:$PATH
+            
+            # Find and delete only application namespaces
+            echo "Finding and deleting application namespaces..."
+            NS_TO_DELETE=$(kubectl get namespace -l "radapp.io/environment-type" -o jsonpath="{.items[?(@.metadata.name!='radius-system')].metadata.name}")
+            
+            if [ -n "$NS_TO_DELETE" ]; then
+              echo "Deleting application namespaces: $NS_TO_DELETE"
+              for ns in $NS_TO_DELETE; do
+                kubectl delete namespace $ns --ignore-not-found=true
+              done
+            else
+              echo "No application namespaces found to delete"
+            fi
+          fi
