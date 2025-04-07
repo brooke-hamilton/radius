@@ -1,0 +1,20 @@
+name: Exit Scheduled Workflow for Forks
+
+on:
+  workflow_call:
+    inputs:
+      upstream_owner:
+        description: 'The name of the upstream repository owner'
+        required: true
+        type: string
+        default: 'radius-project'
+
+jobs:
+  check-if-fork:
+    if: ${{ github.event_name == 'schedule' && github.repository_owner != inputs.upstream_owner }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Exit scheduled workflow for forks
+        run: |
+          echo "This is a fork. Exiting scheduled workflow..."
+          exit 0
