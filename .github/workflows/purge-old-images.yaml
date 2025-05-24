@@ -8,9 +8,9 @@ permissions:
 on:
   # Enable manual trigger
   workflow_dispatch:
-  schedule:
-    # Run twice a day
-    - cron: "30 0,12 * * *"
+  # schedule:
+  #   # Run twice a day
+  #   - cron: "30 0,12 * * *"
 
 env:
   ACTION_LINK: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

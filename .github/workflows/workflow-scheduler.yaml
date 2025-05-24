@@ -1,0 +1,81 @@
+name: Workflow Scheduler
+on:
+  workflow_dispatch:
+  schedule:
+    # Every five minutes
+    #- cron: '*/5 * * * *'
+    # Run every 2 hours
+    - cron: '0 */2 * * *'
+    # Run every 4 hours on weekdays.
+    - cron: '30 0,4,8,12,16,20 * * 1-5'
+    # Run every 12 hours on weekends.
+    - cron: '30 0,12 * * 0,6'
+    # Run at 12:00AM PST every day.
+    - cron: '0 7 * * 0-6'
+    # Run twice a day
+    - cron: '30 0,12 * * *'
+    # Run every day at 11:47 PM UTC
+    - cron: '47 23 * * *'
+
+env:
+    GH_TOKEN: ${{ github.token }}
+
+jobs:
+  manual_dispatch_job:
+    name: Manual Dispatch
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github # Checks out only the .github directory
+      - uses: ./.github/actions/dispatch-workflow
+        name: Run reusable-echo.yaml
+        with:
+          workflow_file_name: reusable-echo.yaml
+  five_minute_job:
+    if: github.event.schedule == '*/5 * * * *'
+    uses: ./.github/workflows/reusable-echo.yaml
+  two_hour_job:
+    name: Every Two Hours
+    if: github.event.schedule == '0 */2 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every two hours
+        run: echo 'This step runs every two hours'
+  four_hour_weekday_job:
+    name: Weekdays Every Four Hours
+    if: github.event.schedule == '30 0,4,8,12,16,20 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every four hours on weekdays
+        run: echo 'This step runs every four hours on weekdays'
+  twelve_hour_weekend_job:
+    name: Weekends Every Twelve Hours
+    if: github.event.schedule == '30 0,12 * * 0,6'
+    runs-on: ubuntu-latest
+    steps:
+      - name: every twelve hours on weekends
+        run: echo 'This step runs every twelve hours on weekends'
+  twelve_am_pst_daily:
+    name: Twelve AM PST Daily
+    if: github.event.schedule == '0 7 * * 0-6'
+    runs-on: ubuntu-latest
+    steps:
+      - name: twelve am pst daily
+        run: echo 'This step runs at 12:00AM PST every day'
+  twice_daily:
+    name: Twice Daily
+    if: github.event.schedule == '30 0,12 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: twice daily
+        run: echo 'This step runs twice a day'
+  daily_eleven_forty_seven:
+    name: Daily Eleven Forty Seven
+    if: github.event.schedule == '47 23 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: eleven forty seven
+        run: echo 'This step runs at 11:47 PM UTC every day'
+      

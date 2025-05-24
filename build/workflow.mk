@@ -14,7 +14,15 @@
 # limitations under the License.
 # ------------------------------------------------------------
 
-ARROW := \033[34;1m=>\033[0m
+##@ Workflow
 
-# order matters for these
-include build/help.mk build/version.mk build/build.mk build/util.mk build/generate.mk build/test.mk build/docker.mk build/recipes.mk build/install.mk build/db.mk build/prettier.mk build/debug.mk build/workflow.mk
+# Default values for workflow dispatch
+ifndef WORKFLOW_FILE_NAME
+$(error WORKFLOW_FILE_NAME is required but not set)
+endif
+REPOSITORY ?= $(shell gh repo view --json nameWithOwner --jq '.nameWithOwner')
+BRANCH ?= main
+.PHONY: workflow
+workflow: ## Dispatch a GitHub workflow using the dispatch-workflow script
+	@echo "$(ARROW) Dispatching workflow $(WORKFLOW_FILE_NAME) on $(REPOSITORY) for branch $(BRANCH)"
+	@./.github/actions/dispatch-workflow/dispatch-workflow.sh $(WORKFLOW_FILE_NAME) $(REPOSITORY) $(BRANCH)

@@ -259,6 +259,7 @@ jobs:
           helm push ${{ env.ARTIFACT_DIR }}/${{ env.HELM_PACKAGE_DIR }}/radius-${{ env.CHART_VERSION }}.tgz oci://${{ env.OCI_REGISTRY }}/${{ env.OCI_REPOSITORY }}
 
   build-and-push-bicep-types:
+    if: github.repository == 'radius-project/radius'
     name: Publish Radius bicep types to ACR
     runs-on: ubuntu-latest
     environment: publish-bicep

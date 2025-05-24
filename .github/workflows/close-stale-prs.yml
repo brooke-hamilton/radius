@@ -4,13 +4,14 @@
 # https://github.com/actions/stale
 name: Close stale pull requests
 
-on:
-  schedule:
-  - cron: '0 18 * * *' # Run the workflow every day at 6PM UTC (10AM PST).
+on: workflow_dispatch
+# on:
+#   schedule:
+#   - cron: '0 18 * * *' # Run the workflow every day at 6PM UTC (10AM PST).
 
 jobs:
   stale:
-
+    if: github.repository == 'radius-project/radius'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

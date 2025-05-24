@@ -1,10 +1,12 @@
+#!/bin/bash
+
 # ------------------------------------------------------------
 # Copyright 2023 The Radius Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-#    
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
@@ -14,7 +16,24 @@
 # limitations under the License.
 # ------------------------------------------------------------
 
-ARROW := \033[34;1m=>\033[0m
+set -e
 
-# order matters for these
-include build/help.mk build/version.mk build/build.mk build/util.mk build/generate.mk build/test.mk build/docker.mk build/recipes.mk build/install.mk build/db.mk build/prettier.mk build/debug.mk build/workflow.mk
+WORKFLOW_FILE_NAME=$1
+REPOSITORY=$2
+BRANCH=$3
+
+# Check if all required parameters are provided
+if [ -z "$WORKFLOW_FILE_NAME" ] || [ -z "$REPOSITORY" ] || [ -z "$BRANCH" ]; then
+  echo "❌ Error: Missing required parameters"
+  echo "Usage: $0 <workflow_file_name> <repository> <branch>"
+  exit 1
+fi
+
+gh api \
+    --method POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "/repos/${REPOSITORY}/actions/workflows/${WORKFLOW_FILE_NAME}/dispatches" \
+    -f "ref=${BRANCH}"
+
+echo "✅ Dispatched workflow '$WORKFLOW_FILE_NAME' on repository '$REPOSITORY' for branch '$BRANCH'"

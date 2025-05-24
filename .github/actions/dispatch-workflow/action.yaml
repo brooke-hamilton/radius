@@ -1,0 +1,32 @@
+name: 'Dispatch Workflow'
+description: 'Dispatch a workflow in a GitHub repository using the GitHub API'
+
+inputs:
+  workflow_file_name:
+    description: 'File name of the workflow to dispatch'
+    required: true
+  repository:
+    description: 'Repository name (owner/repo)'
+    required: true
+    default: ${{ github.repository }}
+  branch:
+    description: 'Branch or tag name to dispatch workflow on'
+    required: true
+    default: 'main'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Dispatch Workflow    
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        .github/actions/dispatch-workflow/dispatch-workflow.sh \
+          ${{ inputs.workflow_file_name }} \
+          ${{ inputs.repository }} \
+          ${{ inputs.branch }}
+    
+branding:
+  icon: 'play'
+  color: 'blue'

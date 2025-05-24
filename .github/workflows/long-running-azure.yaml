@@ -55,9 +55,9 @@ on:
         options:
           - 'true'
           - 'false'
-  schedule:
-    # Run every 2 hours
-    - cron: "0 */2 * * *"
+  # schedule:
+  #   # Run every 2 hours
+  #   - cron: "0 */2 * * *"
 
 env:
 

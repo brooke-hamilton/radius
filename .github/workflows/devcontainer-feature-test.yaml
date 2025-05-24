@@ -15,6 +15,7 @@ on:
 
 jobs:
   test:
+    if: github.repository == 'radius-project/radius'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -32,6 +33,7 @@ jobs:
         working-directory: ./deploy/devcontainer-feature
 
   test-scenarios:
+    if: github.repository == 'radius-project/radius'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
