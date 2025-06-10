@@ -21,4 +21,9 @@ RAD_LOCATION := /usr/local/bin/rad
 .PHONY: install
 install: build-binaries ## Installs a local build for development
 	@echo "$(ARROW) Installing rad"
-	cp $(OUT_DIR)/$(GOOS)_$(GOARCH)/$(BUILDTYPE_DIR)/rad$(BINARY_EXT) $(RAD_LOCATION)
+	sudo cp $(OUT_DIR)/$(GOOS)_$(GOARCH)/$(BUILDTYPE_DIR)/rad$(BINARY_EXT) $(RAD_LOCATION)
+
+.PHONY: install-latest
+install-latest: ## Installs the latest release from GitHub
+	@echo "$(ARROW) Installing latest rad release"
+	@bash ./deploy/install.sh

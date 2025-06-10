@@ -154,6 +154,10 @@ test-ucp-spec-examples: oav-installed ## Validates UCP examples conform to UCP O
 	# @echo "$(ARROW) Testing x-ms-examples conform to ucp spec..."
 	# oav validate-example swagger/specification/ucp/resource-manager/UCP/preview/2023-10-01-preview/openapi.json
 
-.PHONY: test-deploy-lrt-cluster
-test-deploy-lrt-cluster: ## Deploys an AKS cluster to Azure for the long-running tests. Optional parameters: [LRT_AZURE_LOCATION=<location>] [LRT_RG=<resource group name>]
+.PHONY: test-deploy-aks-cluster
+test-deploy-aks-cluster: ## Deploys an AKS cluster to Azure for the long-running tests. Optional parameters: [LRT_AZURE_LOCATION=<location>] [LRT_RG=<resource group name>]
 	@bash ./build/test.sh deploy-lrt-cluster
+
+.PHONY: test-lrt
+test-lrt: ## Runs the long-running tests against the AKS cluster deployed by test-deploy-lrt-cluster using the currently installed version of the Radius CLI and the current az authenticated subscription.
+	@bash ./build/test.sh run-lrt

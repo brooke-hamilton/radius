@@ -63,7 +63,7 @@ deploy_lrt_cluster() {
     # Default values (can be overridden by environment variables)
     local location="${LRT_AZURE_LOCATION:-westus3}"
     local resource_group="${LRT_RG:-$(whoami)-radius-lrt}"
-    
+
     print_info "Configuration:"
     print_info "  Subscription: $(az account show --query "[name,id]" --output tsv | paste -sd,)"
     print_info "  Resource Group: $resource_group"
@@ -88,13 +88,16 @@ deploy_lrt_cluster() {
         --template-file "$template_file"; then
         print_success "Deployment completed successfully!"
         
-        # Get AKS cluster name
+        # Connect to the AKS cluster
         local aks_cluster
         aks_cluster=$(az aks list --resource-group "$resource_group" --query '[0].name' -o tsv 2>/dev/null || echo "")
+        az aks get-credentials --resource-group "$resource_group" --name "$aks_cluster" --admin --overwrite-existing --output none
+
         if [[ -n "$aks_cluster" ]]; then
-            print_info "AKS Cluster: $aks_cluster"
+        # Connect to cluster
+            print_success "AKS cluster created and connected: '$aks_cluster'."
             print_info "To connect to the cluster, run:"
-            print_info "  az aks get-credentials --resource-group $resource_group --name $aks_cluster"
+            print_info "  az aks get-credentials --resource-group $resource_group --name $aks_cluster --admin"
             print_info "To delete the cluster, run:"
             print_info "  az group delete --name $resource_group --yes --no-wait"
         fi
@@ -104,5 +107,105 @@ deploy_lrt_cluster() {
     fi
 }
 
-check_azure_cli
-deploy_lrt_cluster
+set_test_env() {
+    
+    # Required environment variables
+    # You must be connected to a kubernetes cluster
+    # Radius must be installed locally
+    
+    export AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}"
+    export AZURE_SP_TESTS_APPID="960d45e2-3636-46f7-ac3a-57262dc5e9c5"
+    export AZURE_SP_TESTS_TENANTID=${AZURE_SP_TESTS_TENANTID:-$(az account show --query tenantId -o tsv)}
+    export TEST_BICEP_TYPES_REGISTRY="${TEST_BICEP_TYPES_REGISTRY:-testuserdefinedbiceptypes.azurecr.io}"
+    RAD_VERSION="${RAD_VERSION:-$(rad version -o json | jq -r ".release //empty")}"
+    export RAD_VERSION
+    export BICEP_RECIPE_TAG_VERSION="${BICEP_RECIPE_TAG_VERSION:-$RAD_VERSION}" # Use the RAD version as the tag for recipes by default
+    export BICEP_RECIPE_REGISTRY="${BICEP_RECIPE_REGISTRY:-ghcr.io/radius-project/dev/test/recipes}"
+    
+    # Resource group where tests will deploy resources
+    local id="${GITHUB_RUN_NUMBER:-$(whoami)}"
+    TEST_RESOURCE_GROUP=${TEST_RESOURCE_GROUP:-($(whoami)-test-$(echo "$id" | sha1sum | head -c 5))}
+    export TEST_RESOURCE_GROUP
+    export TEST_RESOURCE_GROUP_LOCATION="${TEST_RESOURCE_GROUP_LOCATION:-westus3}"
+}
+
+run_lrt() {
+    set_test_env
+    
+    print_info "Running long-running tests against the AKS cluster..."
+    
+    print_info "Publishing Bicep types to registry..."
+    rad bicep publish-extension -f ./test/functional-portable/dynamicrp/noncloud/resources/testdata/testresourcetypes.yaml --target types.tgz --force
+    make publish-test-bicep-recipes
+
+    print_info "Creating resource group for tests '$TEST_RESOURCE_GROUP' in location '$TEST_RESOURCE_GROUP_LOCATION'..."
+    az group create --name "$TEST_RESOURCE_GROUP" --location "$TEST_RESOURCE_GROUP_LOCATION" --output none
+
+    print_info "Installing Radius CLI..."
+    rad install kubernetes --reinstall
+    
+    # Ensure that all pods are running before proceeding
+    kubectl wait --for=condition=available --all deployments --namespace radius-system --timeout=120s
+
+    rad workspace create kubernetes --force
+    rad group create default
+    rad group switch default
+    rad env create default --namespace default
+    rad env switch default
+    rad env update default --azure-subscription-id "$AZURE_SUBSCRIPTION_ID" --azure-resource-group "$TEST_RESOURCE_GROUP"
+    rad credential register azure wi --client-id "$AZURE_SP_TESTS_APPID" --tenant-id "$AZURE_SP_TESTS_TENANTID"
+
+    # rad env update ${{ env.RADIUS_TEST_ENVIRONMENT_NAME }} --aws-region ${{ env.AWS_REGION }} --aws-account-id ${{ secrets.FUNCTEST_AWS_ACCOUNT_ID }}
+    # rad credential register aws access-key \
+    #     --access-key-id ${{ secrets.FUNCTEST_AWS_ACCESS_KEY_ID }} --secret-access-key ${{ secrets.FUNCTEST_AWS_SECRET_ACCESS_KEY }}
+
+    # curl -s https://fluxcd.io/install.sh | FLUX_VERSION=2.5.1 sudo bash
+    # flux install --namespace=flux-system --version=v2.5.1 --components=source-controller --network-policy=false
+    # kubectl wait --for=condition=available deployment -l app.kubernetes.io/component=source-controller -n flux-system --timeout=120s
+    
+    # Install Gitea
+
+    make publish-test-terraform-recipes
+
+    # FUNC_TEST_OIDC_ISSUER not used
+    # export FUNCTEST_OIDC_ISSUER=$(az aks show -n $AKS_CLUSTER_NAME -g $AZURE_RESOURCE_GROUP --query "oidcIssuerProfile.issuerUrl" -otsv)
+
+    # Restore Radius Bicep types
+    bicep restore ./test/functional-portable/corerp/cloud/resources/testdata/corerp-azure-connection-database-service.bicep --force
+    # Restore AWS Bicep types 
+    bicep restore ./test/functional-portable/corerp/cloud/resources/testdata/aws-s3-bucket.bicep --force
+
+    # make test-functional-all
+
+    #Delete the resource group after tests
+    print_info "Deleting resource group '$TEST_RESOURCE_GROUP'..."
+    az group delete --name "$TEST_RESOURCE_GROUP" --yes --no-wait
+}
+
+main() {
+    if [[ $# -eq 0 ]]; then
+        print_error "No command specified."
+        print_info "Available commands: deploy-lrt-cluster, run-lrt"
+        exit 1
+    fi
+    
+    local command="$1"
+    check_azure_cli
+    
+    case "$command" in
+        "deploy-lrt-cluster")
+            deploy_lrt_cluster
+            ;;
+        "run-lrt")
+            run_lrt
+            ;;
+        *)
+            print_error "Unknown command: $command"
+            print_info "Available commands: deploy-lrt-cluster, run-lrt"
+            exit 1
+            ;;
+    esac
+}
+
+# Run main function with all arguments
+main "$@"
