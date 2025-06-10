@@ -90,7 +90,7 @@ module aksCluster './modules/akscluster.bicep' = {
   params: {
     name: aksClusterName
     location: location
-    kubernetesVersion: '1.31.5'
+    kubernetesVersion: '1.31.8'
     logAnalyticsWorkspaceId: logAnalyticsWorkspace.outputs.id
     systemAgentPoolName: 'agentpool'
     systemAgentPoolVmSize: 'Standard_D4as_v5'
@@ -100,6 +100,8 @@ module aksCluster './modules/akscluster.bicep' = {
     userAgentPoolName: 'userpool'
     userAgentPoolVmSize: 'Standard_D8as_v5'
     userAgentPoolAvailabilityZones: []
+    userAgentPoolMaxPods: 50
+    userAgentPoolMinCount: 4
     userAgentPoolOsDiskType: 'Managed'
     userAgentPoolOsSKU: 'AzureLinux'
     daprEnabled: true
