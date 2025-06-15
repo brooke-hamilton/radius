@@ -74,17 +74,15 @@ get_env_vars() {
     printf '%s\n' "${env_vars[@]}"
 }
 
+# Set default values for environment variables if not already set
 set_env_defaults(){
-    # Set default values for environment variables if not already set
     export AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}"
-    export AZURE_SP_TESTS_APPID="${AZURE_SP_TESTS_APPID:-960d45e2-3636-46f7-ac3a-57262dc5e9c5}"
     export AZURE_SP_TESTS_TENANTID="${AZURE_SP_TESTS_TENANTID:-$(az account show --query tenantId -o tsv)}"
     export TEST_BICEP_TYPES_REGISTRY="${TEST_BICEP_TYPES_REGISTRY:-testuserdefinedbiceptypes.azurecr.io}"
     if [[ -n "${RAD_VERSION:-}" ]]; then
         export BICEP_RECIPE_TAG_VERSION="${BICEP_RECIPE_TAG_VERSION:-$RAD_VERSION}" # Use the RAD version as the tag for recipes by default
     fi
     export BICEP_RECIPE_REGISTRY="${BICEP_RECIPE_REGISTRY:-ghcr.io/radius-project/dev/test/recipes}"
-    
     # Resource group where tests will deploy resources
     local id="${GITHUB_RUN_NUMBER:-$(whoami)}"
     TEST_RESOURCE_GROUP="${TEST_RESOURCE_GROUP:-$(whoami)-test-$(echo "$id" | sha1sum | head -c 5)}"
@@ -103,7 +101,7 @@ create_env_file() {
         echo "# Environment variables for tests"
 
         for var in "${env_vars[@]}"; do
-            echo "$var=\"${!var:-}\""
+            echo "export $var=\"${!var:-}\""
         done
     } > $env_file_path || {
         print_error "Failed to create test.env file."
@@ -132,10 +130,10 @@ load_environment() {
     local missing_vars=()
     for var in "${env_vars[@]}"; do
         if [[ -z "${!var:-}" ]]; then
-            print_error "$var is not set or is empty"
+            print_error "$var"
             missing_vars+=("$var")
         else
-            print_success "$var is set"
+            print_success "$var"
         fi
     done
     
@@ -298,6 +296,37 @@ tear_down_aks_cluster() {
     fi
 }
 
+# Check if GitHub CLI is installed and authenticated
+check_gh_auth_status() {
+    print_info "Checking GitHub CLI authentication status..."
+    if ! command -v gh &> /dev/null; then
+        print_error "GitHub CLI (gh) is required but not installed."
+        exit 1
+    fi
+
+    # Check if user is authenticated and has required scopes
+    if ! gh auth status &> /dev/null; then
+        print_error "GitHub CLI is not authenticated."
+        print_info "Please run 'gh auth login' to authenticate."
+        exit 1
+    elif ! gh auth status 2>/dev/null | grep -q "write:packages"; then
+        print_warning "GitHub CLI does not have 'write:packages' scope. Please run 'gh auth refresh --scopes write:packages'."
+        exit 1
+    fi
+
+    # Docker must be available
+    if ! docker info &> /dev/null; then
+        print_error "Docker is not running or not accessible."
+        exit 1
+    fi
+
+    # Authenticate to ghcr.io in docker
+    gh_user=$(gh api user --jq .login)
+    print_info "Authenticating to ghcr.io as user: $gh_user"
+    docker_login_message=$(gh auth token | docker login ghcr.io -u "$gh_user" --password-stdin)
+    print_success "$docker_login_message"
+}
+
 main() {
     if [[ $# -eq 0 ]]; then
         print_error "No command specified."
@@ -306,9 +335,10 @@ main() {
         exit 1
     fi
     
-    local command="$1"
     check_azure_cli
+    check_gh_auth_status
     
+    local command="$1"
     case "$command" in
         "load-environment")
             load_environment
