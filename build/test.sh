@@ -56,8 +56,36 @@ check_azure_cli() {
     fi
 }
 
+set_test_env() {
+    
+    # Required environment variables
+    # You must be connected to a kubernetes cluster
+    # Radius must be installed locally
+    
+    export AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}"
+    export AZURE_SP_TESTS_APPID="960d45e2-3636-46f7-ac3a-57262dc5e9c5"
+    export AZURE_SP_TESTS_TENANTID=${AZURE_SP_TESTS_TENANTID:-$(az account show --query tenantId -o tsv)}
+    export TEST_BICEP_TYPES_REGISTRY="${TEST_BICEP_TYPES_REGISTRY:-testuserdefinedbiceptypes.azurecr.io}"
+    RAD_VERSION="${RAD_VERSION:-$(rad version -o json | jq -r ".release //empty")}"
+    export RAD_VERSION
+    export BICEP_RECIPE_TAG_VERSION="${BICEP_RECIPE_TAG_VERSION:-$RAD_VERSION}" # Use the RAD version as the tag for recipes by default
+    export BICEP_RECIPE_REGISTRY="${BICEP_RECIPE_REGISTRY:-ghcr.io/radius-project/dev/test/recipes}"
+    
+    # Resource group where tests will deploy resources
+    local id="${GITHUB_RUN_NUMBER:-$(whoami)}"
+    TEST_RESOURCE_GROUP=${TEST_RESOURCE_GROUP:-$(whoami)-test-$(echo "$id" | sha1sum | head -c 5)}
+    export TEST_RESOURCE_GROUP
+    export TEST_RESOURCE_GROUP_LOCATION="${TEST_RESOURCE_GROUP_LOCATION:-westus3}"
+
+}
+
 # Deploy long-running test cluster
 deploy_lrt_cluster() {
+    set_test_env
+
+    # Install latest Radius CLI release
+    make install-latest
+
     print_info "Deploying long-running test cluster to Azure..."
     
     # Default values (can be overridden by environment variables)
@@ -77,6 +105,13 @@ deploy_lrt_cluster() {
         az provider register --namespace Microsoft.ContainerService
     fi
     
+    # Check if resource group exists and delete it if it does
+    if az group exists --name "$resource_group" --output tsv | grep -q "true"; then
+        print_warning "Resource group '$resource_group' already exists. Deleting it..."
+        az group delete --name "$resource_group" --yes
+        print_success "Resource group '$resource_group' deleted successfully."
+    fi
+
     print_info "Creating resource group '$resource_group' in location '$location'..."
     az group create --location "$location" --resource-group "$resource_group" --output none
     print_success "Resource group created successfully."
@@ -105,35 +140,7 @@ deploy_lrt_cluster() {
         print_error "Deployment failed!"
         exit 1
     fi
-}
 
-set_test_env() {
-    
-    # Required environment variables
-    # You must be connected to a kubernetes cluster
-    # Radius must be installed locally
-    
-    export AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}"
-    export AZURE_SP_TESTS_APPID="960d45e2-3636-46f7-ac3a-57262dc5e9c5"
-    export AZURE_SP_TESTS_TENANTID=${AZURE_SP_TESTS_TENANTID:-$(az account show --query tenantId -o tsv)}
-    export TEST_BICEP_TYPES_REGISTRY="${TEST_BICEP_TYPES_REGISTRY:-testuserdefinedbiceptypes.azurecr.io}"
-    RAD_VERSION="${RAD_VERSION:-$(rad version -o json | jq -r ".release //empty")}"
-    export RAD_VERSION
-    export BICEP_RECIPE_TAG_VERSION="${BICEP_RECIPE_TAG_VERSION:-$RAD_VERSION}" # Use the RAD version as the tag for recipes by default
-    export BICEP_RECIPE_REGISTRY="${BICEP_RECIPE_REGISTRY:-ghcr.io/radius-project/dev/test/recipes}"
-    
-    # Resource group where tests will deploy resources
-    local id="${GITHUB_RUN_NUMBER:-$(whoami)}"
-    TEST_RESOURCE_GROUP=${TEST_RESOURCE_GROUP:-($(whoami)-test-$(echo "$id" | sha1sum | head -c 5))}
-    export TEST_RESOURCE_GROUP
-    export TEST_RESOURCE_GROUP_LOCATION="${TEST_RESOURCE_GROUP_LOCATION:-westus3}"
-}
-
-run_lrt() {
-    set_test_env
-    
-    print_info "Running long-running tests against the AKS cluster..."
-    
     print_info "Publishing Bicep types to registry..."
     rad bicep publish-extension -f ./test/functional-portable/dynamicrp/noncloud/resources/testdata/testresourcetypes.yaml --target types.tgz --force
     make publish-test-bicep-recipes
@@ -159,12 +166,6 @@ run_lrt() {
     # rad credential register aws access-key \
     #     --access-key-id ${{ secrets.FUNCTEST_AWS_ACCESS_KEY_ID }} --secret-access-key ${{ secrets.FUNCTEST_AWS_SECRET_ACCESS_KEY }}
 
-    # curl -s https://fluxcd.io/install.sh | FLUX_VERSION=2.5.1 sudo bash
-    # flux install --namespace=flux-system --version=v2.5.1 --components=source-controller --network-policy=false
-    # kubectl wait --for=condition=available deployment -l app.kubernetes.io/component=source-controller -n flux-system --timeout=120s
-    
-    # Install Gitea
-
     make publish-test-terraform-recipes
 
     # FUNC_TEST_OIDC_ISSUER not used
@@ -174,12 +175,43 @@ run_lrt() {
     bicep restore ./test/functional-portable/corerp/cloud/resources/testdata/corerp-azure-connection-database-service.bicep --force
     # Restore AWS Bicep types 
     bicep restore ./test/functional-portable/corerp/cloud/resources/testdata/aws-s3-bucket.bicep --force
+    make install-flux
+    make install-gitea
+}
 
+run_lrt() {
+    set_test_env
+    
+    print_info "Running long-running tests against the AKS cluster..."
+        
     # make test-functional-all
+    #make test-functional-ucp
+    # make test-functional-kubernetes
+    
+    # Time out and one failure
+    # make test-functional-corerp
+    
+    # No return
+    #make test-functional-cli
+    
+    # 4 tests, 4 failures
+    #make test-functional-msgrp
+    
+    # 8 failures
+    #make test-functional-daprrp
+    
+    # 6 failures
+    #make test-functional-datastoresrp
+    
+    # Needs path to samples repo
+    #make test-functional-samples
+    
+    # 4 failures
+    #make test-functional-dynamicrp-noncloud
 
     #Delete the resource group after tests
-    print_info "Deleting resource group '$TEST_RESOURCE_GROUP'..."
-    az group delete --name "$TEST_RESOURCE_GROUP" --yes --no-wait
+    #print_info "Deleting resource group '$TEST_RESOURCE_GROUP'..."
+    #az group delete --name "$TEST_RESOURCE_GROUP" --yes --no-wait
 }
 
 main() {
