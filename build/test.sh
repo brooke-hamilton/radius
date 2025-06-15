@@ -56,32 +56,101 @@ check_azure_cli() {
     fi
 }
 
-set_test_env() {
-    
-    # Required environment variables
-    # You must be connected to a kubernetes cluster
-    # Radius must be installed locally
-    
+# All environment variables required for the tests
+get_env_vars() {
+
+    local env_vars=(
+        "AZURE_SUBSCRIPTION_ID"
+        "AZURE_SP_TESTS_APPID"
+        "AZURE_SP_TESTS_TENANTID"
+        "TEST_BICEP_TYPES_REGISTRY"
+        "RAD_VERSION"
+        "BICEP_RECIPE_TAG_VERSION"
+        "BICEP_RECIPE_REGISTRY"
+        "TEST_RESOURCE_GROUP"
+        "TEST_RESOURCE_GROUP_LOCATION"
+    )
+
+    printf '%s\n' "${env_vars[@]}"
+}
+
+set_env_defaults(){
+    # Set default values for environment variables if not already set
     export AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}"
-    export AZURE_SP_TESTS_APPID="960d45e2-3636-46f7-ac3a-57262dc5e9c5"
-    export AZURE_SP_TESTS_TENANTID=${AZURE_SP_TESTS_TENANTID:-$(az account show --query tenantId -o tsv)}
+    export AZURE_SP_TESTS_APPID="${AZURE_SP_TESTS_APPID:-960d45e2-3636-46f7-ac3a-57262dc5e9c5}"
+    export AZURE_SP_TESTS_TENANTID="${AZURE_SP_TESTS_TENANTID:-$(az account show --query tenantId -o tsv)}"
     export TEST_BICEP_TYPES_REGISTRY="${TEST_BICEP_TYPES_REGISTRY:-testuserdefinedbiceptypes.azurecr.io}"
-    RAD_VERSION="${RAD_VERSION:-$(rad version -o json | jq -r ".release //empty")}"
-    export RAD_VERSION
-    export BICEP_RECIPE_TAG_VERSION="${BICEP_RECIPE_TAG_VERSION:-$RAD_VERSION}" # Use the RAD version as the tag for recipes by default
+    if [[ -n "${RAD_VERSION:-}" ]]; then
+        export BICEP_RECIPE_TAG_VERSION="${BICEP_RECIPE_TAG_VERSION:-$RAD_VERSION}" # Use the RAD version as the tag for recipes by default
+    fi
     export BICEP_RECIPE_REGISTRY="${BICEP_RECIPE_REGISTRY:-ghcr.io/radius-project/dev/test/recipes}"
     
     # Resource group where tests will deploy resources
     local id="${GITHUB_RUN_NUMBER:-$(whoami)}"
-    TEST_RESOURCE_GROUP=${TEST_RESOURCE_GROUP:-$(whoami)-test-$(echo "$id" | sha1sum | head -c 5)}
+    TEST_RESOURCE_GROUP="${TEST_RESOURCE_GROUP:-$(whoami)-test-$(echo "$id" | sha1sum | head -c 5)}"
     export TEST_RESOURCE_GROUP
     export TEST_RESOURCE_GROUP_LOCATION="${TEST_RESOURCE_GROUP_LOCATION:-westus3}"
+}
 
+# Create a test.env file with the required environment variables from the get_env_vars function
+create_env_file() {
+    print_info " Creating test.env file with default values. Check the file contents to ensure accuracy."
+    set_env_defaults
+    local env_file_path="./build/test.env"
+    local env_vars
+    mapfile -t env_vars < <(get_env_vars)
+    {
+        echo "# Environment variables for tests"
+
+        for var in "${env_vars[@]}"; do
+            echo "$var=\"${!var:-}\""
+        done
+    } > $env_file_path || {
+        print_error "Failed to create test.env file."
+        exit 1
+    }
+
+    print_success "test.env file created successfully"
+    cat $env_file_path
+}
+
+# Load environment variables from the test.env file if it exists.
+# Validate that all required environment variables have values.
+load_environment() {
+    
+    # Source the test environment file if it exists
+    if [[ -f "./build/test.env" ]]; then
+        # shellcheck source=/dev/null
+        source "./build/test.env"
+    fi
+
+    # Validate that all required environment variables have values
+    print_info "Validating environment variables..."
+    local env_vars
+    mapfile -t env_vars < <(get_env_vars)
+
+    local missing_vars=()
+    for var in "${env_vars[@]}"; do
+        if [[ -z "${!var:-}" ]]; then
+            print_error "$var is not set or is empty"
+            missing_vars+=("$var")
+        else
+            print_success "$var is set"
+        fi
+    done
+    
+    if [[ ${#missing_vars[@]} -gt 0 ]]; then
+        print_error "Missing ${#missing_vars[@]} required environment variable(s). Exiting."
+        exit 1
+    fi
+
+    print_success "All required environment variables are properly set"
 }
 
 # Deploy long-running test cluster
-deploy_lrt_cluster() {
-    set_test_env
+deploy_aks_cluster() {
+
+    load_environment
 
     # Install latest Radius CLI release
     make install-latest
@@ -180,10 +249,11 @@ deploy_lrt_cluster() {
 }
 
 run_lrt() {
-    set_test_env
     
     print_info "Running long-running tests against the AKS cluster..."
-        
+    
+    load_environment
+
     # make test-functional-all
     #make test-functional-ucp
     # make test-functional-kubernetes
@@ -214,10 +284,25 @@ run_lrt() {
     #az group delete --name "$TEST_RESOURCE_GROUP" --yes --no-wait
 }
 
+tear_down_aks_cluster() {
+    print_info "Tearing down AKS cluster and resource group..."
+    
+    load_environment
+
+    if az group exists --name "$TEST_RESOURCE_GROUP" --output tsv | grep -q "true"; then
+        print_info "Deleting resource group '$TEST_RESOURCE_GROUP'..."
+        az group delete --name "$TEST_RESOURCE_GROUP" --yes --no-wait
+        print_success "Resource group '$TEST_RESOURCE_GROUP' deleted successfully."
+    else
+        print_warning "Resource group '$TEST_RESOURCE_GROUP' does not exist."
+    fi
+}
+
 main() {
     if [[ $# -eq 0 ]]; then
         print_error "No command specified."
-        print_info "Available commands: deploy-lrt-cluster, run-lrt"
+        local available_commands="create-env-file, deploy-aks-cluster, run-lrt"
+        print_info "Available commands: $available_commands"
         exit 1
     fi
     
@@ -225,15 +310,21 @@ main() {
     check_azure_cli
     
     case "$command" in
-        "deploy-lrt-cluster")
-            deploy_lrt_cluster
+        "load-environment")
+            load_environment
+            ;;
+        "create-env-file")
+            create_env_file
+            ;;
+        "deploy-aks-cluster")
+            deploy_aks_cluster
             ;;
         "run-lrt")
             run_lrt
             ;;
         *)
             print_error "Unknown command: $command"
-            print_info "Available commands: deploy-lrt-cluster, run-lrt"
+            print_info "Available commands: $available_commands"
             exit 1
             ;;
     esac

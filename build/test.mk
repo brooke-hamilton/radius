@@ -156,8 +156,12 @@ test-ucp-spec-examples: oav-installed ## Validates UCP examples conform to UCP O
 
 .PHONY: test-deploy-aks-cluster
 test-deploy-aks-cluster: ## Deploys an AKS cluster to Azure for the long-running tests. Optional parameters: [LRT_AZURE_LOCATION=<location>] [LRT_RG=<resource group name>]
-	@bash ./build/test.sh deploy-lrt-cluster
+	@bash ./build/test.sh deploy-aks-cluster
 
 .PHONY: test-lrt
 test-lrt: ## Runs the long-running tests against the AKS cluster deployed by test-deploy-lrt-cluster using the currently installed version of the Radius CLI and the current az authenticated subscription.
 	@bash ./build/test.sh run-lrt
+
+.PHONY: test-create-env-file
+test-create-env-file: ## Creates a test.env file with environment variables for testing
+	./build/test.sh create-env-file
