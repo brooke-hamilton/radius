@@ -100,6 +100,7 @@ create_env_file() {
     local env_vars
     mapfile -t env_vars < <(get_env_vars)
     {
+        echo "# shellcheck disable=SC2148"
         echo "# Environment variables for tests"
 
         for var in "${env_vars[@]}"; do
@@ -246,6 +247,7 @@ deploy_aks_cluster() {
     bicep restore ./test/functional-portable/corerp/cloud/resources/testdata/aws-s3-bucket.bicep --force
     make install-flux
     make install-gitea
+    print_success "Radius and test tools installed to cluster '$aks_cluster'."
 }
 
 run_lrt() {
@@ -332,7 +334,7 @@ check_gh_auth_status() {
 main() {
     if [[ $# -eq 0 ]]; then
         print_error "No command specified."
-        local available_commands="create-env-file, deploy-aks-cluster, run-lrt"
+        local available_commands="load-environment, create-env-file, deploy-aks-cluster, run-lrt"
         print_info "Available commands: $available_commands"
         exit 1
     fi
