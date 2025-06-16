@@ -79,6 +79,8 @@ set_env_defaults(){
     export AZURE_SUBSCRIPTION_ID="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv)}"
     export AZURE_SP_TESTS_TENANTID="${AZURE_SP_TESTS_TENANTID:-$(az account show --query tenantId -o tsv)}"
     export TEST_BICEP_TYPES_REGISTRY="${TEST_BICEP_TYPES_REGISTRY:-testuserdefinedbiceptypes.azurecr.io}"
+    RAD_VERSION=$(gh release list -R radius-project/radius --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq ".[0].tagName")
+    export RAD_VERSION
     if [[ -n "${RAD_VERSION:-}" ]]; then
         export BICEP_RECIPE_TAG_VERSION="${BICEP_RECIPE_TAG_VERSION:-$RAD_VERSION}" # Use the RAD version as the tag for recipes by default
     fi
