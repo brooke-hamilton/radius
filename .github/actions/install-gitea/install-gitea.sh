@@ -75,4 +75,6 @@ echo "$output"
 
 if [ -n "$GITHUB_OUTPUT" ]; then
   echo "gitea-access-token=$output" >> "$GITHUB_OUTPUT"
+else
+  export GITEA_ACCESS_TOKEN="$output"
 fi

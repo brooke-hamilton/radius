@@ -69,6 +69,7 @@ get_env_vars() {
         "BICEP_RECIPE_REGISTRY"
         "TEST_RESOURCE_GROUP"
         "TEST_RESOURCE_GROUP_LOCATION"
+        "AZURE_COSMOS_MONGODB_ACCOUNT_ID"
     )
 
     printf '%s\n' "${env_vars[@]}"
@@ -90,6 +91,60 @@ set_env_defaults(){
     TEST_RESOURCE_GROUP="${TEST_RESOURCE_GROUP:-$(whoami)-test-$(echo "$id" | sha1sum | head -c 5)}"
     export TEST_RESOURCE_GROUP
     export TEST_RESOURCE_GROUP_LOCATION="${TEST_RESOURCE_GROUP_LOCATION:-westus3}"
+}
+
+# Add a secret to kubernetes using kubectl
+add_secret() {
+    local key="$1"
+    local value="$2"
+    local secret_name="lrt-secrets"
+    
+    if [[ -z "$key" || -z "$value" ]]; then
+        print_error "Both key and value parameters are required"
+        print_info "Usage: add_secret <key> <value>"
+        return 1
+    fi
+    
+    print_info "Adding secret '$key' to Kubernetes secret '$secret_name'..."
+    
+    # Create or update the secret
+    if kubectl get secret "$secret_name" &>/dev/null; then
+        # Secret exists, patch it to add the new key
+        if kubectl patch secret "$secret_name" --type='merge' -p="{\"data\":{\"$key\":\"$(echo -n "$value" | base64 -w 0)\"}}"; then
+            print_success "Secret '$key' added to existing '$secret_name' successfully"
+        fi
+    else
+        # Secret doesn't exist, create it
+        if kubectl create secret generic "$secret_name" --from-literal="$key=$value"; then
+            print_success "Secret '$secret_name' created with '$key' successfully"
+        fi
+    fi
+}
+
+# Load secrets from Kubernetes secret and export as environment variables
+load_secrets() {
+    local secret_name="lrt-secrets"
+    
+    print_info "Loading secrets from Kubernetes secret '$secret_name'..."
+    
+    # Get all key-value pairs from the secret. This will fail if the secret does not exist.
+    local secret_data
+    secret_data=$(kubectl get secret "$secret_name" -o jsonpath='{.data}' 2>/dev/null)
+    
+    if [[ -z "$secret_data" || "$secret_data" == "{}" ]]; then
+        print_error "Secret '$secret_name' exists but contains no data."
+        exit 1
+    fi
+    
+    # Parse and export each key-value pair
+    local keys
+    keys=$(echo "$secret_data" | jq -r 'keys[]' 2>/dev/null)
+    
+    for key in $keys; do
+        value=$(echo "$secret_data" | jq -r ".$key" | base64 -d 2>/dev/null)
+        print_success "$key"
+        export "$key"="$value"
+    done
 }
 
 # Create a test.env file with the required environment variables from the get_env_vars function
@@ -115,9 +170,8 @@ create_env_file() {
     cat $env_file_path
 }
 
-# Load environment variables from the test.env file if it exists.
 # Validate that all required environment variables have values.
-load_environment() {
+check_environment() {
     
     # Source the test environment file if it exists
     if [[ -f "./build/test.env" ]]; then
@@ -151,7 +205,7 @@ load_environment() {
 # Deploy long-running test cluster
 deploy_aks_cluster() {
 
-    load_environment
+    check_environment
 
     # Install latest Radius CLI release
     make install-latest
@@ -193,7 +247,7 @@ deploy_aks_cluster() {
         --template-file "$template_file"; then
         print_success "Deployment completed successfully!"
         
-        # Connect to the AKS cluster
+        # Connect to the AKS cluster, assumes one cluster in the resource group
         local aks_cluster
         aks_cluster=$(az aks list --resource-group "$resource_group" --query '[0].name' -o tsv 2>/dev/null || echo "")
         az aks get-credentials --resource-group "$resource_group" --name "$aks_cluster" --admin --overwrite-existing --output none
@@ -254,10 +308,16 @@ run_lrt() {
     
     print_info "Running long-running tests against the AKS cluster..."
     
-    load_environment
+    check_environment
+
+    make test-functional-corerp
+    make test-functional-msgrp
+    make test-functional-daprrp
+    make test-functional-datastoresrp
+
 
     # make test-functional-all
-    #make test-functional-ucp
+    # make test-functional-ucp
     # make test-functional-kubernetes
     
     # Time out and one failure
@@ -289,7 +349,7 @@ run_lrt() {
 tear_down_aks_cluster() {
     print_info "Tearing down AKS cluster and resource group..."
     
-    load_environment
+    check_environment
 
     if az group exists --name "$TEST_RESOURCE_GROUP" --output tsv | grep -q "true"; then
         print_info "Deleting resource group '$TEST_RESOURCE_GROUP'..."
@@ -334,7 +394,7 @@ check_gh_auth_status() {
 main() {
     if [[ $# -eq 0 ]]; then
         print_error "No command specified."
-        local available_commands="load-environment, create-env-file, deploy-aks-cluster, run-lrt"
+        local available_commands="load-secrets, add-secret, load-environment, create-env-file, deploy-aks-cluster, run-lrt"
         print_info "Available commands: $available_commands"
         exit 1
     fi
@@ -344,8 +404,8 @@ main() {
     
     local command="$1"
     case "$command" in
-        "load-environment")
-            load_environment
+        "check-environment")
+            check_environment
             ;;
         "create-env-file")
             create_env_file
@@ -355,6 +415,12 @@ main() {
             ;;
         "run-lrt")
             run_lrt
+            ;;
+        "add-secret")
+            add_secret "$2" "$3"
+            ;;
+        "load-secrets")
+            load_secrets
             ;;
         *)
             print_error "Unknown command: $command"

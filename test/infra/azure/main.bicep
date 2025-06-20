@@ -202,5 +202,14 @@ module deploymentScript './modules/deployment-script.bicep' = if (installKuberne
   ]
 }
 
+module mongoDB './modules/mongodb.bicep' = {
+  name: 'mongodb'
+  params: {
+    name: '${prefix}-mongodb'
+    location: location
+  }
+}
+
+output mongodbAccountID string = mongoDB.outputs.cosmosMongoAccountID
 output aksControlPlaneFQDN string = aksCluster.outputs.controlPlaneFQDN
 output grafanaDashboardFQDN string = grafanaEnabled ? grafanaDashboard.outputs.dashboardFQDN : ''

@@ -39,7 +39,7 @@ GITEA_VERSION ?= v11.0.0
 GITEA_USERNAME ?= "testuser"
 GITEA_EMAIL ?= "testuser@radapp.io"
 GITEA_ACCESS_TOKEN_NAME ?= "radius-functional-test"
-GITEA_PASSWORD ?= "testpassword"
+GITEA_PASSWORD ?= ""
 .PHONY: install-gitea
 install-gitea: ## Installs gitea
 	@echo "$(ARROW) Installing gitea"

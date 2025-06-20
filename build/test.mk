@@ -165,3 +165,7 @@ test-lrt: ## Runs the long-running tests against the AKS cluster deployed by tes
 .PHONY: test-create-env-file
 test-create-env-file: ## Creates a test.env file with environment variables for testing
 	./build/test.sh create-env-file
+
+.PHONY: test-check-environment
+test-check-environment: ## Checks the environment for required tools and configurations for testing
+	@bash ./build/test.sh check-environment
