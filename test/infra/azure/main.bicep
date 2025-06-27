@@ -47,6 +47,8 @@ param azureMonitorWorkspaceName string = '${prefix}-azm-workspace'
 param azureMonitorWorkspaceLocation string = 'westus2'
 
 @description('Specifies the name of aks cluster. Default is {prefix}-aks.')
+@minLength(1)
+@maxLength(63)
 param aksClusterName string = '${prefix}-aks'
 
 @description('Enables Azure Monitoring and Grafana Dashboard. Default is false.')
@@ -170,7 +172,7 @@ module alertManagement './modules/alert-management.bicep' = if (grafanaEnabled) 
 }
 
 // This is a workaround to get the AKS cluster resource created by aksCluster module
-resource aks 'Microsoft.ContainerService/managedClusters@2023-05-01' existing = {
+resource aks 'Microsoft.ContainerService/managedClusters@2023-10-01' existing = {
   name: aksCluster.name
 }
 
@@ -181,7 +183,7 @@ module promConfigMap './modules/ama-metrics-setting-configmap.bicep' = if (grafa
     kubeConfig: aks.listClusterAdminCredential().kubeconfigs[0].value
   }
   dependsOn: [
-    aks, aksCluster, dataCollection, alertManagement
+    aks, dataCollection, alertManagement
   ]
 }
 
@@ -197,10 +199,16 @@ module deploymentScript './modules/deployment-script.bicep' = if (installKuberne
     location: location
     tags: defaultTags
   }
-  dependsOn: [
-    aksCluster
-  ]
 }
 
+module mongoDB './modules/mongodb.bicep' = {
+  name: 'mongodb'
+  params: {
+    name: '${prefix}-mongodb'
+    location: location
+  }
+}
+
+output mongodbAccountID string = mongoDB.outputs.cosmosMongoAccountID
 output aksControlPlaneFQDN string = aksCluster.outputs.controlPlaneFQDN
 output grafanaDashboardFQDN string = grafanaEnabled ? grafanaDashboard.outputs.dashboardFQDN : ''
