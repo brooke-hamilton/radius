@@ -49,10 +49,10 @@ jobs:
       RELNOTE_FOUND: false
     steps:
       - name: Checkout radius-project/radius
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Get supported versions from versions.yaml
         id: get-supported-versions
-        uses: mikefarah/yq@v4.45.4
+        uses: mikefarah/yq@v4.47.1
         with:
           # Get a comma-separated list of supported versions
           cmd: yq '.supported[].version' versions.yaml | tr '\n' ',' | sed 's/,$//'
@@ -132,28 +132,28 @@ jobs:
     environment: release
     steps:
       - name: Checkout radius-project/radius@main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: radius-project/radius
           ref: main
           token: ${{ secrets.GH_RAD_CI_BOT_PAT }}
           path: radius
       - name: Checkout radius-project/recipes@main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: radius-project/recipes
           ref: main
           token: ${{ secrets.GH_RAD_CI_BOT_PAT }}
           path: recipes
       - name: Checkout radius-project/dashboard@main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: radius-project/dashboard
           ref: main
           token: ${{ secrets.GH_RAD_CI_BOT_PAT }}
           path: dashboard
       - name: Checkout radius-project/bicep-types-aws@main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: radius-project/bicep-types-aws
           ref: main
@@ -165,7 +165,7 @@ jobs:
           git config --global user.email "radiuscoreteam@service.microsoft.com"
       - name: Get supported versions from versions.yaml
         id: get-supported-versions
-        uses: mikefarah/yq@v4.45.4
+        uses: mikefarah/yq@v4.47.1
         with:
           # Get a comma-separated list of supported versions
           cmd: yq '.supported[].version' ./radius/versions.yaml | tr '\n' ',' | sed 's/,$//'
