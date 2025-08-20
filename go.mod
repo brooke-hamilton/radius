@@ -30,7 +30,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.49.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.37.0
 	github.com/aws/smithy-go v1.22.5
-	github.com/charmbracelet/bubbles v0.20.0
+	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.6
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.10.1
@@ -57,7 +57,7 @@ require (
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/goccy/go-yaml v1.18.0
 	github.com/gofrs/flock v0.12.1
-	github.com/google/gnostic-models v0.6.9
+	github.com/google/gnostic-models v0.7.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/gosuri/uilive v0.0.4
