@@ -61,6 +61,12 @@ param dnsServiceIP string = '172.16.0.10'
 ])
 param loadBalancerSku string = 'standard'
 
+@description('Specifies whether the cluster is private or not.')
+param privateClusterEnabled bool = false
+
+@description('Specifies the subnet resource ID for the AKS cluster.')
+param vnetSubnetId string = ''
+
 @description('Specifies outbound (egress) routing method. - loadBalancer or userDefinedRouting.')
 @allowed([
   'loadBalancer'
@@ -373,6 +379,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-10-01' = {
         nodeLabels: systemAgentPoolNodeLabels
         nodeTaints: systemAgentPoolNodeTaints
         kubeletDiskType: systemAgentPoolKubeletDiskType
+        vnetSubnetID: !empty(vnetSubnetId) ? vnetSubnetId : null
       }
       {
         name: toLower(userAgentPoolName)
@@ -394,6 +401,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-10-01' = {
         nodeLabels: userAgentPoolNodeLabels
         nodeTaints: userAgentPoolNodeTaints
         kubeletDiskType: userAgentPoolKubeletDiskType
+        vnetSubnetID: !empty(vnetSubnetId) ? vnetSubnetId : null
       }
     ]
     addonProfiles: {
@@ -420,6 +428,11 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-10-01' = {
     oidcIssuerProfile: {
       enabled: oidcIssuerProfileEnabled
     }
+    apiServerAccessProfile: privateClusterEnabled ? {
+      enablePrivateCluster: privateClusterEnabled
+      privateDNSZone: 'system'
+      enablePrivateClusterPublicFQDN: false
+    } : null
     enableRBAC: true
     networkProfile: {
       networkPlugin: networkPlugin
@@ -501,5 +514,5 @@ resource daprExtension 'Microsoft.KubernetesConfiguration/extensions@2022-07-01'
 output id string = aksCluster.id
 output name string = aksCluster.name
 output location string = aksCluster.location
-output controlPlaneFQDN string = aksCluster.properties.fqdn
+output controlPlaneFQDN string = privateClusterEnabled ? aksCluster.properties.privateFQDN : aksCluster.properties.fqdn
 output principalIdentity string = aksCluster.identity.principalId
