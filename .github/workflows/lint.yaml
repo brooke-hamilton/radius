@@ -40,13 +40,13 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v5
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
           cache: true
       - name: Setup NodeJS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Install TypeSpec compiler
@@ -79,7 +79,7 @@ jobs:
           npx tsp format --check "**/*.tsp"
           popd
       - name: Run linter
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           version: "v1.64.8"
           args: --timeout=10m
@@ -105,7 +105,7 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v5
       - name: Setup NodeJS
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Run `make format-check`
