@@ -1,0 +1,76 @@
+name: Configuration Scenario Tests
+
+permissions:
+  id-token: write # Required for requesting the JWT
+  contents: read # Required for listing the commits
+  pull-requests: write # Required for creating PR comments
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+jobs:
+  config-test:
+    name: Configuration Scenario Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Post configuration test comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        continue-on-error: true
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          header: configtest-${{ github.run_id }}
+          number: ${{ github.event.pull_request.number }}
+          hide: true
+          hide_classify: "OUTDATED"
+          message: |
+            ## Configuration Scenario Test Overview
+
+            :mag: **[Go to test action run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})**
+
+            | Name | Value |
+            |------|-------|
+            |**Repository** | ${{ github.repository }} |
+            |**PR Number** | #${{ github.event.pull_request.number }} |
+            |**Commit SHA** | ${{ github.sha }} |
+            |**Commit ref** | ${{ github.ref }} |
+            |**Triggered by** | @${{ github.actor }} |
+            |**Run attempt** | ${{ github.run_attempt }} |
+
+            <details>
+            <summary>Click here to see test run details</summary>
+
+            * **Workflow**: Configuration Scenario Tests
+            * **Event**: ${{ github.event_name }}
+            * **Base branch**: ${{ github.base_ref }}
+            * **Head branch**: ${{ github.head_ref }}
+            * **Run ID**: ${{ github.run_id }}
+            * **Run number**: ${{ github.run_number }}
+            * **Started at**: ${{ github.event.pull_request.updated_at }}
+
+            </details>
+
+            ## Test Status
+
+            :white_check_mark: Configuration scenario test comment created successfully!
+
+      - name: Update comment with completion status
+        uses: marocchino/sticky-pull-request-comment@v2
+        continue-on-error: true
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          header: configtest-${{ github.run_id }}
+          number: ${{ github.event.pull_request.number }}
+          append: true
+          message: |
+            
+            ---
+            
+            :checkered_flag: **Test completed at**: ${{ github.event.repository.updated_at }}
+            
+            **Final Status**: ${{ job.status }}
