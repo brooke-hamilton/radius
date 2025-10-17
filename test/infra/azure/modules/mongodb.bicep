@@ -1,7 +1,9 @@
+param name string
+
 param location string = resourceGroup().location
 
 resource account 'Microsoft.DocumentDB/databaseAccounts@2020-04-01' = {
-  name: 'account-radiustest'
+  name: name
   location: location
   kind: 'MongoDB'
   tags: {
