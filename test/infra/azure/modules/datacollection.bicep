@@ -95,9 +95,6 @@ module azureMonitorMetricsDcraClusterResourceId './datacollection-dcra.bicep' = 
     dcraName: dcraName
     clusterLocation: clusterLocation
   }
-  dependsOn: [
-    dce
-  ]
 }
 
 // Output

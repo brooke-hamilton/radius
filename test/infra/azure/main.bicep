@@ -47,6 +47,8 @@ param azureMonitorWorkspaceName string = '${prefix}-azm-workspace'
 param azureMonitorWorkspaceLocation string = 'westus2'
 
 @description('Specifies the name of aks cluster. Default is {prefix}-aks.')
+@minLength(1)
+@maxLength(63)
 param aksClusterName string = '${prefix}-aks'
 
 @description('Enables Azure Monitoring and Grafana Dashboard. Default is false.')
@@ -61,8 +63,66 @@ param grafanaDashboardName string = '${prefix}-dashboard'
 @description('Specifies whether to install the required tools for running Radius. Default is true.')
 param installKubernetesDependencies bool = true
 
+@description('Specifies whether the AKS cluster should be private. Default is true for offline environments.')
+param privateClusterEnabled bool = true
+
+@description('Specifies the name of the virtual network. Default is {prefix}-vnet.')
+param virtualNetworkName string = '${prefix}-vnet'
+
+@description('Specifies the address prefix of the virtual network. Default is 10.0.0.0/8.')
+param virtualNetworkAddressPrefix string = '10.0.0.0/8'
+
+@description('Specifies the name of the subnet for AKS nodes. Default is aks-subnet.')
+param aksSubnetName string = 'aks-subnet'
+
+@description('Specifies the address prefix of the AKS subnet. Default is 10.240.0.0/16.')
+param aksSubnetAddressPrefix string = '10.240.0.0/16'
+
+@description('Specifies the name of the subnet for private endpoints. Default is pe-subnet.')
+param privateEndpointSubnetName string = 'pe-subnet'
+
+@description('Specifies the address prefix of the private endpoint subnet. Default is 10.241.0.0/24.')
+param privateEndpointSubnetAddressPrefix string = '10.241.0.0/24'
+
+@description('Specifies the name of the Azure Container Registry. Default is {prefix}registry.')
+@minLength(5)
+@maxLength(50)
+param acrName string = '${replace(prefix, '-', '')}registry'
+
+@description('Specifies whether to create NAT Gateway for outbound connectivity. Default is true.')
+param enableNatGateway bool = true
+
 param defaultTags object = {
   radius: 'infra'
+}
+
+// Deploy Virtual Network for private connectivity
+module virtualNetwork './modules/vnet.bicep' = {
+  name: virtualNetworkName
+  params: {
+    name: virtualNetworkName
+    location: location
+    addressPrefix: virtualNetworkAddressPrefix
+    aksSubnetName: aksSubnetName
+    aksSubnetAddressPrefix: aksSubnetAddressPrefix
+    privateEndpointSubnetName: privateEndpointSubnetName
+    privateEndpointSubnetAddressPrefix: privateEndpointSubnetAddressPrefix
+    enableNatGateway: enableNatGateway
+    tags: defaultTags
+  }
+}
+
+// Deploy Azure Container Registry for private image storage
+module containerRegistry './modules/acr.bicep' = {
+  name: acrName
+  params: {
+    name: acrName
+    location: location
+    sku: 'Premium'
+    privateEndpointSubnetId: virtualNetwork.outputs.privateEndpointSubnetId
+    vnetId: virtualNetwork.outputs.vnetId
+    tags: defaultTags
+  }
 }
 
 // Deploy Log Analytics Workspace for log.
@@ -110,6 +170,10 @@ module aksCluster './modules/akscluster.bicep' = {
     workloadIdentityEnabled: true
     imageCleanerEnabled: true
     imageCleanerIntervalHours: 24
+    // Private cluster configuration
+    privateClusterEnabled: privateClusterEnabled
+    vnetSubnetId: virtualNetwork.outputs.aksSubnetId
+    outboundType: enableNatGateway ? 'userDefinedRouting' : 'loadBalancer'
     tags: defaultTags
   }
 }
@@ -170,7 +234,8 @@ module alertManagement './modules/alert-management.bicep' = if (grafanaEnabled) 
 }
 
 // This is a workaround to get the AKS cluster resource created by aksCluster module
-resource aks 'Microsoft.ContainerService/managedClusters@2023-05-01' existing = {
+// Note: Accessing admin credentials may fail for private clusters during deployment
+resource aks 'Microsoft.ContainerService/managedClusters@2023-10-01' existing = if (grafanaEnabled) {
   name: aksCluster.name
 }
 
@@ -181,13 +246,13 @@ module promConfigMap './modules/ama-metrics-setting-configmap.bicep' = if (grafa
     kubeConfig: aks.listClusterAdminCredential().kubeconfigs[0].value
   }
   dependsOn: [
-    aks, aksCluster, dataCollection, alertManagement
+    aks, dataCollection, alertManagement
   ]
 }
 
 // Run deployment script to bootstrap the cluster for Radius.
-module deploymentScript './modules/deployment-script.bicep' = if (installKubernetesDependencies) {
-  name: 'deploymentScript'
+module deploymentScript './modules/deployment-script-offline.bicep' = if (installKubernetesDependencies) {
+  name: 'offlineDeploymentScript'
   params: {
     name: 'installKubernetesDependencies'
     clusterName: aksCluster.outputs.name
@@ -198,9 +263,22 @@ module deploymentScript './modules/deployment-script.bicep' = if (installKuberne
     tags: defaultTags
   }
   dependsOn: [
-    aksCluster
+    containerRegistry
   ]
 }
 
+module mongoDB './modules/mongodb.bicep' = {
+  name: 'mongodb'
+  params: {
+    name: '${prefix}-mongodb'
+    location: location
+  }
+}
+
+output mongodbAccountID string = mongoDB.outputs.cosmosMongoAccountID
 output aksControlPlaneFQDN string = aksCluster.outputs.controlPlaneFQDN
 output grafanaDashboardFQDN string = grafanaEnabled ? grafanaDashboard.outputs.dashboardFQDN : ''
+output acrLoginServer string = containerRegistry.outputs.loginServer
+output acrName string = containerRegistry.outputs.name
+output vnetId string = virtualNetwork.outputs.vnetId
+output aksSubnetId string = virtualNetwork.outputs.aksSubnetId
