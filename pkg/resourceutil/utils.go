@@ -24,8 +24,9 @@ import (
 )
 
 const (
-	errMarshalResource             = "failed to marshal resource"
-	errUnmarshalResourceProperties = "failed to unmarshal resource for properties"
+	errMarshalResource                        = "failed to marshal resource"
+	errUnmarshalResourceProperties            = "failed to unmarshal resource for properties"
+	errUnmarshalResourceMetadataAndProperties = "failed to unmarshal resource for metadata and properties"
 )
 
 // BasicProperties is a list of common properties that are expected to be present in all resources
@@ -56,6 +57,56 @@ func GetPropertiesFromResource[P any](resource P) (map[string]any, error) {
 	}
 
 	return partialResource.Properties, nil
+}
+
+// GetMetadataAndPropertiesFromResource extracts both metadata (id, name, type, location) and properties from the resource.
+// It returns a map containing:
+// - "id": the resource ID
+// - "name": the resource name
+// - "type": the resource type
+// - "location": the resource location (if present)
+// - all properties from the "properties" field
+func GetMetadataAndPropertiesFromResource[P any](resource P) (map[string]any, error) {
+	// Serialize the resource to JSON
+	bytes, err := json.Marshal(resource)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", errMarshalResource, err)
+	}
+
+	// Define a struct to capture metadata and properties
+	var partialResource struct {
+		ID         string         `json:"id"`
+		Name       string         `json:"name"`
+		Type       string         `json:"type"`
+		Location   string         `json:"location"`
+		Properties map[string]any `json:"properties"`
+	}
+
+	// Deserialize the JSON into the partialResource struct
+	if err := json.Unmarshal(bytes, &partialResource); err != nil {
+		return nil, fmt.Errorf("%s: %w", errUnmarshalResourceMetadataAndProperties, err)
+	}
+
+	// Create result map with metadata
+	result := map[string]any{
+		"id":   partialResource.ID,
+		"name": partialResource.Name,
+		"type": partialResource.Type,
+	}
+
+	// Add location if present
+	if partialResource.Location != "" {
+		result["location"] = partialResource.Location
+	}
+
+	// Merge properties into the result
+	if partialResource.Properties != nil {
+		for key, value := range partialResource.Properties {
+			result[key] = value
+		}
+	}
+
+	return result, nil
 }
 
 // GetConnectionNameandSourceIDs extracts the connected resource IDs from the resource's properties.

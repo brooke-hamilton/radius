@@ -55,9 +55,18 @@ type Resource struct {
 	Properties map[string]any `json:"properties,omitempty"`
 
 	// Connections represent a map of connections to other resources.
-	// The key is the connection name, and the value is a map of connected resource properties.
-	// We enrich the recipe context with this, allowing the recipe to access properties of connected resources using the following format:
-	// context.resource.connections.[connection-name].[connected-resource-property]
+	// The key is the connection name, and the value is a map containing:
+	// - "id": the connected resource's ID
+	// - "name": the connected resource's name
+	// - "type": the connected resource's type
+	// - "location": the connected resource's location (if present)
+	// - all properties from the connected resource's "properties" field
+	// We enrich the recipe context with this, allowing the recipe to access properties and metadata of connected resources using the following format:
+	// context.resource.connections.[connection-name].[connected-resource-property-or-metadata]
+	// For example:
+	// - context.resource.connections.credentials.id
+	// - context.resource.connections.credentials.name
+	// - context.resource.connections.credentials.data.username.value
 	Connections map[string]map[string]any `json:"connections,omitempty"`
 }
 

@@ -305,3 +305,167 @@ func TestGetConnectionNameandSourceIDs_InvalidJSONMarshaling(t *testing.T) {
 	require.Nil(t, result)
 	require.Contains(t, err.Error(), errMarshalResource)
 }
+
+func TestGetMetadataAndPropertiesFromResource(t *testing.T) {
+	tests := []struct {
+		name        string
+		resource    *PropertiesTestResource
+		expected    map[string]any
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "Valid resource with metadata and properties",
+			resource: &PropertiesTestResource{
+				BaseResource: v1.BaseResource{
+					TrackedResource: v1.TrackedResource{
+						ID:       TestResourceID,
+						Name:     "tr",
+						Type:     TestResourceType,
+						Location: "global",
+					},
+				},
+				Properties: map[string]any{
+					"application": TestApplicationID,
+					"environment": TestEnvironmentID,
+					"data": map[string]any{
+						"username": map[string]any{
+							"value": "testuser",
+						},
+						"password": map[string]any{
+							"value": "testpass",
+						},
+					},
+				},
+			},
+			expected: map[string]any{
+				"id":          TestResourceID,
+				"name":        "tr",
+				"type":        TestResourceType,
+				"location":    "global",
+				"application": TestApplicationID,
+				"environment": TestEnvironmentID,
+				"data": map[string]any{
+					"username": map[string]any{
+						"value": "testuser",
+					},
+					"password": map[string]any{
+						"value": "testpass",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Resource without location",
+			resource: &PropertiesTestResource{
+				BaseResource: v1.BaseResource{
+					TrackedResource: v1.TrackedResource{
+						ID:   TestResourceID,
+						Name: "tr",
+						Type: TestResourceType,
+					},
+				},
+				Properties: map[string]any{
+					"application": TestApplicationID,
+				},
+			},
+			expected: map[string]any{
+				"id":          TestResourceID,
+				"name":        "tr",
+				"type":        TestResourceType,
+				"application": TestApplicationID,
+			},
+			expectError: false,
+		},
+		{
+			name: "Resource with empty properties",
+			resource: &PropertiesTestResource{
+				BaseResource: v1.BaseResource{
+					TrackedResource: v1.TrackedResource{
+						ID:   TestResourceID,
+						Name: "tr",
+						Type: TestResourceType,
+					},
+				},
+				Properties: nil,
+			},
+			expected: map[string]any{
+				"id":   TestResourceID,
+				"name": "tr",
+				"type": TestResourceType,
+			},
+			expectError: false,
+		},
+		{
+			name: "Secret resource with metadata - simulates a connected credentials secret",
+			resource: &PropertiesTestResource{
+				BaseResource: v1.BaseResource{
+					TrackedResource: v1.TrackedResource{
+						ID:       "/planes/radius/local/resourceGroups/test-group/providers/Radius.Security/secrets/credentials",
+						Name:     "credentials",
+						Type:     "Radius.Security/secrets",
+						Location: "global",
+					},
+				},
+				Properties: map[string]any{
+					"application": TestApplicationID,
+					"environment": TestEnvironmentID,
+					"data": map[string]any{
+						"username": map[string]any{
+							"value": "postgres",
+						},
+						"password": map[string]any{
+							"value": "secretpassword",
+						},
+					},
+				},
+			},
+			expected: map[string]any{
+				"id":          "/planes/radius/local/resourceGroups/test-group/providers/Radius.Security/secrets/credentials",
+				"name":        "credentials",
+				"type":        "Radius.Security/secrets",
+				"location":    "global",
+				"application": TestApplicationID,
+				"environment": TestEnvironmentID,
+				"data": map[string]any{
+					"username": map[string]any{
+						"value": "postgres",
+					},
+					"password": map[string]any{
+						"value": "secretpassword",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "Invalid JSON",
+			resource: &PropertiesTestResource{
+				Properties: map[string]any{
+					"key": func() {}, // Functions cannot be marshaled to JSON
+				},
+			},
+			expected:    nil,
+			expectError: true,
+			errorMsg:    errMarshalResource,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := GetMetadataAndPropertiesFromResource(tt.resource)
+
+			if tt.expectError {
+				require.Error(t, err)
+				require.Nil(t, result)
+				require.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.Equal(t, tt.expected, result)
+			}
+		})
+	}
+}
+
