@@ -131,7 +131,7 @@ jobs:
       RAD_CLI_ARTIFACT_NAME: ${{ steps.gen-id.outputs.RAD_CLI_ARTIFACT_NAME }}
     steps:
       - name: Restore the latest cached binaries
-        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        uses: actions/cache/restore@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: ./dist/cache
           key: radius-test-latest-
@@ -327,7 +327,7 @@ jobs:
           } >> ./dist/cache/.buildenv
 
       - name: Store the latest binaries into cache
-        uses: actions/cache/save@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        uses: actions/cache/save@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         if: steps.skip-build.outputs.SKIP_BUILD != 'true' && success()
         with:
           path: ./dist/cache
@@ -437,7 +437,7 @@ jobs:
 
       - name: Restore the latest cached binaries
         if: env.SKIP_BUILD == 'true'
-        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        uses: actions/cache/restore@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: ./dist/cache
           key: radius-test-latest-
@@ -486,7 +486,7 @@ jobs:
 
       - name: Restore skip-delete-resources-list
         if: always()
-        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        uses: actions/cache/restore@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: skip-delete-resources-list.txt
           key: skip-delete-resources-list-${{ env.UNIQUE_ID || github.run_id }}
@@ -586,7 +586,7 @@ jobs:
 
       - name: Save list of resources not to be deleted
         if: env.SKIP_BUILD != 'true'
-        uses: actions/cache/save@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        uses: actions/cache/save@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: skip-delete-resources-list.txt
           key: skip-delete-resources-list-${{ env.UNIQUE_ID || github.run_id }}
@@ -744,7 +744,7 @@ jobs:
 
       - name: Restore skip-delete-resources-list
         if: always()
-        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        uses: actions/cache/restore@8b402f58fbc84540c8b491a91e594a4576fec3d7 # v5.0.2
         with:
           path: skip-delete-resources-list.txt
           key: skip-delete-resources-list-${{ env.UNIQUE_ID || github.run_id }}
