@@ -130,16 +130,24 @@ generate-go: generate-mockgen-installed ## Generates go with 'go generate' (Mock
 	@echo "$(ARROW) Running go generate..."
 	go generate -v ./...
 
+.PHONY: generate-pnpm-installed
+generate-pnpm-installed:
+	@echo "$(ARROW) Detecting pnpm..."
+	@which pnpm > /dev/null || { echo "pnpm is a required dependency. Run 'npm install -g pnpm' to install."; exit 1; }
+	@echo "$(ARROW) OK"
+
 .PHONY: generate-bicep-types
-generate-bicep-types: generate-node-installed ## Generate Bicep extensibility types
+generate-bicep-types: generate-node-installed generate-pnpm-installed ## Generate Bicep extensibility types
 	@echo "$(ARROW) Generating Bicep extensibility types from OpenAPI specs..."
-	@echo "$(ARROW) Build autorest.bicep..."
-	git submodule update --init --recursive; \
-	npm --prefix bicep-types/src/bicep-types install; \
-	npm --prefix bicep-types/src/bicep-types ci && npm --prefix bicep-types/src/bicep-types run build; \
-	npm --prefix hack/bicep-types-radius/src/autorest.bicep ci && npm --prefix hack/bicep-types-radius/src/autorest.bicep run build; \
-	echo "Run generator from hack/bicep-types-radius/src/generator dir"; \
-	npm --prefix hack/bicep-types-radius/src/generator ci && npm --prefix hack/bicep-types-radius/src/generator run generate -- --specs-dir ../../../../swagger --release-version ${VERSION} --verbose
+	@echo "$(ARROW) Installing autorest.bicep dependencies (postinstall builds bicep-types)..."
+	cd hack/bicep-types-radius/src/autorest.bicep && pnpm install
+	@echo "$(ARROW) Building autorest.bicep..."
+	pnpm --prefix hack/bicep-types-radius/src/autorest.bicep run build
+	@echo "$(ARROW) Installing generator dependencies (postinstall builds bicep-types)..."
+	cd hack/bicep-types-radius/src/generator && pnpm install
+	@echo "$(ARROW) Running generator..."
+	cd hack/bicep-types-radius/src/generator && pnpm run generate \
+		--specs-dir ../../../../swagger --release-version ${VERSION} --verbose
 
 
 .PHONY: generate-containerinstance-client

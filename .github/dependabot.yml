@@ -46,10 +46,23 @@ updates:
     schedule:
       interval: weekly
 
-  - package-ecosystem: gitsubmodule
-    directory: /
+  - package-ecosystem: npm
+    directory: /hack/bicep-types-radius/src/autorest.bicep
     schedule:
       interval: weekly
+    groups:
+      autorest-bicep:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /hack/bicep-types-radius/src/generator
+    schedule:
+      interval: weekly
+    groups:
+      bicep-generator:
+        patterns:
+          - "*"
 
   - package-ecosystem: npm
     directory: /typespec
