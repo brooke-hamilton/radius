@@ -34,7 +34,7 @@ DEBUG_DEV_ROOT ?= $(PWD)/debug_files
 POSTGRES_ADMIN_CONNECTION ?= postgresql://postgres:radius_pass@localhost:5432/postgres
 POSTGRES_FALLBACK_CONNECTION ?= postgresql://$(shell whoami)@localhost:5432/postgres
 
-.PHONY: debug-setup debug-start debug-stop debug-status debug-help debug-build-all debug-build-ucpd debug-build-applications-rp debug-build-controller debug-build-dynamic-rp debug-build-rad debug-deployment-engine-pull debug-deployment-engine-start debug-deployment-engine-deploy debug-deployment-engine-port-forward debug-deployment-engine-stop debug-deployment-engine-status debug-deployment-engine-logs debug-register-recipes debug-env-init debug-check-prereqs
+.PHONY: debug-setup debug-setup-graph debug-start debug-start-graph debug-stop debug-status debug-help debug-build-all debug-build-ucpd debug-build-applications-rp debug-build-controller debug-build-dynamic-rp debug-build-rad debug-deployment-engine-pull debug-deployment-engine-start debug-deployment-engine-deploy debug-deployment-engine-port-forward debug-deployment-engine-stop debug-deployment-engine-status debug-deployment-engine-logs debug-register-recipes debug-env-init debug-check-prereqs debug-check-prereqs-graph
 
 debug-help: ## Show debug automation help
 	@echo "Debug Development Automation Commands:"
@@ -46,6 +46,7 @@ debug-help: ## Show debug automation help
 	@echo ""
 	@echo "Runtime Commands:"
 	@echo "  debug-start          - Start all Radius components as OS processes"
+	@echo "  debug-start-graph    - Start all components using Git graph storage (no PostgreSQL)"
 	@echo "  debug-stop           - Stop all components, destroy cluster, and clean up completely"
 	@echo "  debug-status         - Show status of all components"
 	@echo "  debug-logs           - Tail all component logs"
@@ -79,6 +80,7 @@ debug-help: ## Show debug automation help
 	@echo "Configuration:"
 	@echo "  DEBUG_CONFIG_FILE    - Debug configuration file (default: build/debug-config.yaml)"
 	@echo "  DEBUG_DEV_ROOT       - Debug development root (default: $(PWD)/debug_files)"
+	@echo "  GRAPH_REPO_PATH      - Git state repo path for debug-start-graph (default: /tmp/radius-graphstore-repo)"
 	@echo ""
 
 debug-setup: debug-check-prereqs ## Complete one-time setup for OS process debugging
@@ -238,6 +240,80 @@ debug-start: debug-setup debug-build-all ## Start k3d cluster and all Radius com
 	@echo "📊 Use 'make debug-status' to check component health"
 	@echo "🚢 Use 'make debug-deployment-engine-status' to check deployment engine"
 
+# Graph store configuration
+GRAPH_REPO_PATH ?= /tmp/radius-graphstore-repo
+DEPLOYMENT_ENGINE_MANIFEST ?= build/configs/deployment-engine.yaml
+
+debug-check-prereqs-graph: ## Check prerequisites for graph store debugging (no PostgreSQL required)
+	@echo "🔍 Checking debug prerequisites (graph store mode — no PostgreSQL needed)..."
+	@MISSING_TOOLS=""; \
+	if ! command -v go >/dev/null 2>&1; then \
+		MISSING_TOOLS="$$MISSING_TOOLS go"; \
+	fi; \
+	if ! command -v dlv >/dev/null 2>&1; then \
+		MISSING_TOOLS="$$MISSING_TOOLS dlv"; \
+	fi; \
+	if ! command -v k3d >/dev/null 2>&1; then \
+		MISSING_TOOLS="$$MISSING_TOOLS k3d"; \
+	fi; \
+	if ! command -v kubectl >/dev/null 2>&1; then \
+		MISSING_TOOLS="$$MISSING_TOOLS kubectl"; \
+	fi; \
+	if ! command -v terraform >/dev/null 2>&1; then \
+		MISSING_TOOLS="$$MISSING_TOOLS terraform"; \
+	fi; \
+	if ! command -v git >/dev/null 2>&1; then \
+		MISSING_TOOLS="$$MISSING_TOOLS git"; \
+	fi; \
+	if [ -n "$$MISSING_TOOLS" ]; then \
+		echo "❌ Missing required tools:$$MISSING_TOOLS"; \
+		exit 1; \
+	fi; \
+	echo "✅ All required tools are available (PostgreSQL not needed)"
+
+debug-setup-graph: debug-check-prereqs-graph ## One-time setup for graph store debugging (no PostgreSQL required)
+	@echo "Setting up Radius debug environment (graph store mode)..."
+	@mkdir -p $(DEBUG_DEV_ROOT)/{logs,bin,terraform-cache}
+	@chmod +x build/scripts/*.sh 2>/dev/null || true
+	@chmod +x build/scripts/rad-wrapper 2>/dev/null || true
+	@chmod +x drad 2>/dev/null || true
+	@echo "✅ Debug environment setup complete at $(DEBUG_DEV_ROOT)"
+
+debug-start-graph: debug-setup-graph debug-build-all ## Start k3d cluster and all components using Git graph storage (no PostgreSQL)
+	@echo "Creating k3d cluster..."
+	@if k3d cluster list | grep -q "radius-debug"; then \
+		echo "k3d cluster 'radius-debug' already exists"; \
+	else \
+		k3d cluster create radius-debug --api-port 0.0.0.0:6443 --wait --timeout 60s; \
+	fi
+	@echo "Switching to k3d context..."
+	@kubectl config use-context k3d-radius-debug
+	@echo "Starting Radius components with Git graph storage..."
+	@GRAPH_REPO_PATH=$(GRAPH_REPO_PATH) build/scripts/start-radius-graph.sh
+	@echo "Waiting for components to be ready..."
+	@max_attempts=30; \
+	attempt=0; \
+	while [ $$attempt -lt $$max_attempts ]; do \
+		if curl -s "http://localhost:9000/healthz" > /dev/null 2>&1; then \
+			echo "✅ UCP is ready"; \
+			break; \
+		fi; \
+		echo "Waiting for UCP... (attempt $$((attempt + 1))/$$max_attempts)"; \
+		sleep 2; \
+		attempt=$$((attempt + 1)); \
+	done; \
+	if [ $$attempt -eq $$max_attempts ]; then \
+		echo "❌ UCP not ready after $$max_attempts attempts"; \
+		echo "💡 Check component logs with 'make debug-logs'"; \
+		exit 1; \
+	fi
+	@echo "Initializing environment resources..."
+	@$(MAKE) debug-env-init DEPLOYMENT_ENGINE_MANIFEST=build/configs/deployment-engine-graphstore.yaml
+	@echo "🚀 All components started with Git graph storage!"
+	@echo "📦 Git state repo: $(GRAPH_REPO_PATH)"
+	@echo "📊 Use 'make debug-status' to check component health"
+	@echo "🔍 Inspect state: git -C $(GRAPH_REPO_PATH) for-each-ref refs/infra/"
+
 debug-stop: ## Stop all running Radius components, destroy k3d cluster, and clean up
 	@echo "Stopping Radius components..."
 	@if [ -f build/scripts/stop-radius.sh ]; then \
@@ -291,7 +367,7 @@ debug-deployment-engine-start: ## Start deployment engine in k3d cluster
 
 debug-deployment-engine-deploy: ## Deploy deployment engine to k3d cluster
 	@echo "Applying deployment engine manifest to k3d cluster..."
-	@kubectl --context k3d-radius-debug apply -f build/configs/deployment-engine.yaml
+	@kubectl --context k3d-radius-debug apply -f $(DEPLOYMENT_ENGINE_MANIFEST)
 	@echo "Waiting for deployment engine to be ready..."
 	@kubectl --context k3d-radius-debug wait --for=condition=available deployment/deployment-engine --timeout=60s
 

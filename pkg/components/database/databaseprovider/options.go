@@ -29,6 +29,9 @@ type Options struct {
 
 	// PostgreSQL configures options for connecting to a PostgreSQL database. Will be ignored if another store is configured.
 	PostgreSQL PostgreSQLOptions `yaml:"postgresql,omitempty"`
+
+	// GraphStore configures options for the Git graph store. Will be ignored if another store is configured.
+	GraphStore GraphStoreOptions `yaml:"graphstore,omitempty"`
 }
 
 // APIServerOptions represents options for the configuring the Kubernetes APIServer store.
@@ -43,6 +46,21 @@ type APIServerOptions struct {
 
 // InMemoryOptions represents options for the in-memory store.
 type InMemoryOptions struct{}
+
+// GraphStoreOptions represents options for the Git graph store.
+type GraphStoreOptions struct {
+	// RepoPath is the absolute path to the Git repository used for state storage.
+	RepoPath string `yaml:"repoPath"`
+
+	// GraphName is the name of the graph within the repository.
+	// Defaults to "radius" if empty. Maps to refs/infra/<graphName>.
+	GraphName string `yaml:"graphName"`
+
+	// RemoteURL is the Git remote URL to clone from if the repository
+	// does not exist at RepoPath. Optional — if empty, RepoPath must
+	// already contain a valid Git repository.
+	RemoteURL string `yaml:"remoteUrl,omitempty"`
+}
 
 // PostgreSQLOptions represents options for the PostgreSQL store.
 type PostgreSQLOptions struct {

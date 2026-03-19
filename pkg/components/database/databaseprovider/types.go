@@ -28,4 +28,7 @@ const (
 
 	// TypePostgreSQL represents the PostgreSQL provider.
 	TypePostgreSQL DatabaseProviderType = "postgresql"
+
+	// TypeGraphStore represents the Git graph store provider.
+	TypeGraphStore DatabaseProviderType = "graphstore"
 )

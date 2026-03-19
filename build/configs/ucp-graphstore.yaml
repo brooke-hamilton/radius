@@ -1,0 +1,74 @@
+environment:
+  name: "dev"
+  roleLocation: "global"
+
+server:
+  port: 9000
+  pathBase: /apis/api.ucp.dev/v1alpha3
+
+# Graph store backed by a local Git repository instead of PostgreSQL.
+# Create the repo first:
+#   mkdir -p /tmp/radius-graphstore-repo && cd /tmp/radius-graphstore-repo && git init && git commit --allow-empty -m "init"
+databaseProvider:
+  provider: "graphstore"
+  graphstore:
+    repoPath: "/tmp/radius-graphstore-repo"
+    graphName: "radius-ucp"
+
+secretProvider:
+  provider: "kubernetes"
+
+queueProvider:
+  provider: "inmemory"
+  name: 'ucp'
+
+profilerProvider:
+  enabled: false
+  port: 6061
+
+initialization:
+  planes:
+    - id: "/planes/aws/aws"
+      properties:
+        kind: "AWS"
+    - id: "/planes/radius/local"
+      properties:
+        resourceProviders:
+          Applications.Core: "http://localhost:8080"
+          Applications.Messaging: "http://localhost:8080"
+          Applications.Dapr: "http://localhost:8080"
+          Applications.Datastores: "http://localhost:8080"
+          Microsoft.Resources: "http://localhost:5017"
+        kind: "UCPNative"
+    - id: "/planes/azure/azure"
+      properties:
+        kind: "Azure"
+  manifestDirectory: "deploy/manifest/built-in-providers/dev"
+
+identity:
+  authMethod: default
+
+ucp:
+  kind: direct
+  direct:
+    endpoint: "http://localhost:9000/apis/api.ucp.dev/v1alpha3"
+
+routing:
+  defaultDownstreamEndpoint: "http://localhost:8082"
+
+metricsProvider:
+  enabled: false
+  serviceName: "ucp"
+  prometheus:
+    path: "/metrics"
+    port: 9091
+
+logging:
+  level: "debug"
+  json: false
+
+tracerProvider:
+  enabled: false
+  serviceName: "ucp"
+  zipkin:
+    url: "http://localhost:9411/api/v2/spans"

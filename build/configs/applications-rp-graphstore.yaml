@@ -1,0 +1,64 @@
+environment:
+  name: "dev"
+  roleLocation: "global"
+
+# Graph store backed by a local Git repository instead of PostgreSQL.
+# Create the repo first:
+#   mkdir -p /tmp/radius-graphstore-repo && cd /tmp/radius-graphstore-repo && git init && git commit --allow-empty -m "init"
+databaseProvider:
+  provider: "graphstore"
+  graphstore:
+    repoPath: "/tmp/radius-graphstore-repo"
+    graphName: "radius-app"
+
+queueProvider:
+  provider: "inmemory"
+  name: radius
+
+secretProvider:
+  provider: "kubernetes"
+
+metricsProvider:
+  enabled: false
+  serviceName: applications-rp
+  prometheus:
+    path: "/metrics"
+    port: 9092
+
+profilerProvider:
+  enabled: false
+  port: 6060
+
+featureFlags:
+  - "PLACEHOLDER"
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  enableArmAuth: false
+
+workerServer:
+  maxOperationConcurrency: 10
+  maxOperationRetryCount: 2
+
+ucp:
+  kind: direct
+  direct:
+    endpoint: "http://localhost:9000/apis/api.ucp.dev/v1alpha3"
+
+logging:
+  level: "info"
+  json: false
+
+tracerProvider:
+  enabled: false
+  serviceName: applications-rp
+  zipkin:
+    url: "http://localhost:9411/api/v2/spans"
+
+bicep:
+  deleteRetryCount: 20
+  deleteRetryDelaySeconds: 60
+
+terraform:
+  path: "debug_files/terraform"

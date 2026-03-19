@@ -26,6 +26,7 @@ import (
 	store "github.com/radius-project/radius/pkg/components/database"
 	"github.com/radius-project/radius/pkg/components/database/apiserverstore"
 	ucpv1alpha1 "github.com/radius-project/radius/pkg/components/database/apiserverstore/api/ucp.dev/v1alpha1"
+	"github.com/radius-project/radius/pkg/components/database/graphstore"
 	"github.com/radius-project/radius/pkg/components/database/inmemory"
 	"github.com/radius-project/radius/pkg/components/database/postgres"
 	"github.com/radius-project/radius/pkg/kubeutil"
@@ -41,6 +42,7 @@ var databaseClientFactory = map[DatabaseProviderType]databaseClientFactoryFunc{
 	TypeAPIServer:  initAPIServerClient,
 	TypeInMemory:   initInMemoryClient,
 	TypePostgreSQL: initPostgreSQLClient,
+	TypeGraphStore: initGraphStoreClient,
 }
 
 func initAPIServerClient(ctx context.Context, opt Options) (store.Client, error) {
@@ -104,4 +106,23 @@ func initPostgreSQLClient(ctx context.Context, opt Options) (store.Client, error
 	}
 
 	return postgres.NewPostgresClient(pool), nil
+}
+
+// initGraphStoreClient creates a new graph store client.
+func initGraphStoreClient(ctx context.Context, opt Options) (store.Client, error) {
+	if opt.GraphStore.RepoPath == "" {
+		return nil, errors.New("failed to initialize graph store client: repoPath is required")
+	}
+
+	graphName := opt.GraphStore.GraphName
+	if graphName == "" {
+		graphName = "radius"
+	}
+
+	client, err := graphstore.NewClient(opt.GraphStore.RepoPath, graphName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize graph store client: %w", err)
+	}
+
+	return client, nil
 }
