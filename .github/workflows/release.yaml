@@ -54,7 +54,7 @@ jobs:
 
       - name: Get supported versions from versions.yaml
         id: get-supported-versions
-        uses: mikefarah/yq@2be0094729a1006f61e8339ce9934bfb3cbb549f # v4.52.2
+        uses: mikefarah/yq@0f4fb8d35ec1a939d78dd6862f494d19ec589f19 # v4.52.5
         with:
           # Get a comma-separated list of supported versions
           cmd: yq '.supported[].version' versions.yaml | tr '\n' ',' | sed 's/,$//'
@@ -93,7 +93,7 @@ jobs:
             })
             return data.body
 
-      - uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
+      - uses: marocchino/sticky-pull-request-comment@70d2764d1a7d5d9560b100cbea0077fc8f633987 # v3.0.2
         with:
           header: relnote-${{ github.run_id }}
           number: ${{ github.event.pull_request.number }}
@@ -116,7 +116,7 @@ jobs:
             echo "RELNOTE_FOUND=true" >> "${GITHUB_ENV}"
           fi
 
-      - uses: marocchino/sticky-pull-request-comment@773744901bac0e8cbb5a0dc842800d45e9b2b405 # v2.9.4
+      - uses: marocchino/sticky-pull-request-comment@70d2764d1a7d5d9560b100cbea0077fc8f633987 # v3.0.2
         continue-on-error: true
         if: ${{ !contains(steps.get-version.outputs.release-version, '-rc') && env.RELNOTE_FOUND == 'false' }}
         with:
@@ -194,7 +194,7 @@ jobs:
 
       - name: Get supported versions from versions.yaml
         id: get-supported-versions
-        uses: mikefarah/yq@2be0094729a1006f61e8339ce9934bfb3cbb549f # v4.52.2
+        uses: mikefarah/yq@0f4fb8d35ec1a939d78dd6862f494d19ec589f19 # v4.52.5
         with:
           # Get a comma-separated list of supported versions
           cmd: yq '.supported[].version' ./radius/versions.yaml | tr '\n' ',' | sed 's/,$//'
