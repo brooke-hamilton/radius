@@ -45,13 +45,24 @@ ENV_SETUP=$(GOBIN)/setup-envtest$(BINARY_EXT)
 #
 # Gotestsum is a drop-in replacement for go test, but it provides a much nicer formatted output
 # and it can also generate JUnit XML reports.
-ifeq (, $(shell which gotestsum))
+ifeq ($(GOOS),windows)
+ifeq (, $(shell where gotestsum 2> NUL))
 GOTEST_TOOL ?= go test
 else
 # Use these options by default but allow an override via env-var
 GOTEST_OPTS ?=
 # We need the double dash here to separate the 'gotestsum' options from the 'go test' options
 GOTEST_TOOL ?= gotestsum $(GOTESTSUM_OPTS) --
+endif
+else
+ifeq (, $(shell which gotestsum 2> /dev/null))
+GOTEST_TOOL ?= go test
+else
+# Use these options by default but allow an override via env-var
+GOTEST_OPTS ?=
+# We need the double dash here to separate the 'gotestsum' options from the 'go test' options
+GOTEST_TOOL ?= gotestsum $(GOTESTSUM_OPTS) --
+endif
 endif
 
 .PHONY: test

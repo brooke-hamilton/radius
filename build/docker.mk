@@ -135,8 +135,8 @@ copy-manifests:
 
 # Function to extract the name and the directory of the Dockerfile from the app string
 define parseApp
-$(eval NAME := $(shell echo $(1) | cut -d: -f1))
-$(eval DIR := $(shell echo $(1) | cut -d: -f2))
+$(eval NAME := $(word 1,$(subst :, ,$(1))))
+$(eval DIR := $(word 2,$(subst :, ,$(1))))
 endef
 
 # This command will dynamically generate the targets for each image in the APPS_MAP list.

@@ -53,7 +53,11 @@ else
 endif
 
 # Linker flags: https://cmake.org/cmake/help/latest/envvar/LDFLAGS.html.
-TERRAFORM_VERSION := $(shell cat .terraform-version)
+ifeq ($(GOOS),windows)
+TERRAFORM_VERSION := $(strip $(shell type .terraform-version))
+else
+TERRAFORM_VERSION := $(strip $(shell cat .terraform-version))
+endif
 LDFLAGS := "-s -w -X $(BASE_PACKAGE_NAME)/pkg/version.channel=$(REL_CHANNEL) -X $(BASE_PACKAGE_NAME)/pkg/version.release=$(REL_VERSION) -X $(BASE_PACKAGE_NAME)/pkg/version.commit=$(GIT_COMMIT) -X $(BASE_PACKAGE_NAME)/pkg/version.version=$(GIT_VERSION) -X $(BASE_PACKAGE_NAME)/pkg/version.chartVersion=$(CHART_VERSION) -X $(BASE_PACKAGE_NAME)/pkg/recipes/terraform.terraformVersion=$(TERRAFORM_VERSION)"
 
 # Combination of flags into GOARGS.
@@ -99,10 +103,12 @@ endef
 # `main module (github.com/radius-project/radius) does not contain package github.com/radius-project/radius/test/testrp`
 define generatePlatformBuildTarget
 .PHONY: build-$(3)-$(1)-$(2)
+build-$(3)-$(1)-$(2): export GOOS := $(1)
+build-$(3)-$(1)-$(2): export GOARCH := $(2)
 build-$(3)-$(1)-$(2):
   $(eval BINS_OUT_DIR_$(1)_$(2) := $(OUT_DIR)/$(1)_$(2)/$(BUILDTYPE_DIR))
 	@echo "$(ARROW) Building $(3) on $(1)/$(2) to $(BINS_OUT_DIR_$(1)_$(2))/$(3)$(BINARY_EXT)"
-	cd $(4) && GOOS=$(1) GOARCH=$(2) go build \
+	cd $(4) && go build \
 		-v \
 		-gcflags $(GCFLAGS) \
 		-ldflags=$(LDFLAGS) \
@@ -128,8 +134,8 @@ BINARIES := docgen:./cmd/docgen \
 
 # This function parses binary name and entrypoint from an item in the BINARIES list.
 define parseBinary
-$(eval NAME := $(shell echo $(1) | cut -d: -f1))
-$(eval ENTRYPOINT := $(shell echo $(1) | cut -d: -f2))
+$(eval NAME := $(word 1,$(subst :, ,$(1))))
+$(eval ENTRYPOINT := $(word 2,$(subst :, ,$(1))))
 endef
 
 # Generate build targets for each binary.
@@ -166,8 +172,8 @@ define generateBicepBuildTarget
 .PHONY: build-bicep-$(1)-$(2)
 build-bicep-$(1)-$(2):
 	$(eval BINS_OUT_DIR_$(1)_$(2) := $(OUT_DIR)/$(1)_$(2)/$(BUILDTYPE_DIR))
-	@echo "$(ARROW) Building bicep container on $(1)/$(2) to $(BINS_OUT_DIR_$(1)_$(2))/bicep"
-	./build/install-bicep.sh $(REL_CHANNEL) $(BINS_OUT_DIR_$(1)_$(2))/bicep $(2)
+	@echo "$(ARROW) Building bicep container on $(1)/$(2)"
+	$(if $(filter windows,$(1)),powershell -NoProfile -ExecutionPolicy Bypass -File ./build/install-bicep.ps1 $(REL_CHANNEL) $(BINS_OUT_DIR_$(1)_$(2))/bicep.exe $(2),./build/install-bicep.sh $(REL_CHANNEL) $(BINS_OUT_DIR_$(1)_$(2))/bicep $(2))
 endef
 
 # Generate bicep build targets for each combination of OS and ARCH

@@ -227,7 +227,7 @@ generate-containerinstance-client: generate-tsp-installed  ## Generates the Cont
 		--tag=package-preview-2024-11
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
-PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))/..
+PROJECT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 define go-get-tool
 @[ -f $(1) ] || { \
 set -e ;\
