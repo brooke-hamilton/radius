@@ -1,6 +1,9 @@
 {
   "name": "Radius - Contributor",
   // For details see https://github.com/radius-project/radius/tree/main/docs/contributing/contributing-code/contributing-code-prerequisites
+  // IMPORTANT: Keep this file in sync with .github/workflows/copilot-setup-steps.yml,
+  // which provisions the same environment for the GitHub Copilot coding agent.
+  // A change to languages, tools, or versions here should be mirrored there.
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
     //Git and GitHub Setup
@@ -9,10 +12,16 @@
     //Programming languages
     "ghcr.io/devcontainers/features/go:1": {},
     "ghcr.io/guiyomh/features/gotestsum:0.1.1": {},
+    // Keep this version aligned with .node-version (the source of truth used by
+    // CI and copilot-setup-steps.yml).
     "ghcr.io/devcontainers/features/node:2": {
       "version": "24"
     },
-    "ghcr.io/devcontainers/features/python:1": {},
+    // Keep this version aligned with .python-version (the source of truth used
+    // by CI and copilot-setup-steps.yml).
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.14"
+    },
     //Container and K8s
     "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
       "minikube": "none",

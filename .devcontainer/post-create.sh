@@ -30,9 +30,18 @@ echo "==========================================================================
 echo "Setting SHELL environment variable..."
 export SHELL="${SHELL:-/bin/bash}"
 
-# Adding workspace as safe directory to avoid permission issues
+# Resolve the repository root from this script's location so the script works
+# both inside the dev container (/workspaces/radius) and on a CI runner such as
+# GitHub Actions, where the checkout lives in ${GITHUB_WORKSPACE}.
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly REPO_ROOT
+
+# Add the workspace as a git safe directory to avoid "dubious ownership" errors.
+# Guard with a lookup so repeated runs do not append duplicate entries.
 echo "Adding workspace as git safe directory..."
-git config --global --add safe.directory /workspaces/radius
+if ! git config --global --get-all safe.directory 2>/dev/null | grep -Fxq "${REPO_ROOT}"; then
+    git config --global --add safe.directory "${REPO_ROOT}"
+fi
 
 # Install pnpm via corepack
 echo "Installing pnpm via corepack..."
@@ -59,7 +68,9 @@ echo "Installing cspell..."
 # Ensure pnpm global bin directory exists and is on PATH before installing
 # global packages. `pnpm setup` updates shell rc files for future sessions,
 # but we also need PATH updated for the current script execution.
-export PNPM_HOME="${PNPM_HOME:-/home/vscode/.local/share/pnpm}"
+# Derive from ${HOME} so the path is valid both in the dev container (vscode
+# user) and on a CI runner such as GitHub Actions (runner user).
+export PNPM_HOME="${PNPM_HOME:-${HOME}/.local/share/pnpm}"
 PNPM_BIN_DIR="$(pnpm config get global-bin-dir 2>/dev/null || true)"
 if [[ -z "${PNPM_BIN_DIR}" || "${PNPM_BIN_DIR}" == "undefined" ]]; then
     PNPM_BIN_DIR="${PNPM_HOME}/bin"
