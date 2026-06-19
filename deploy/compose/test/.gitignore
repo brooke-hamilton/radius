@@ -1,0 +1,9 @@
+# Cluster kubeconfig extracted for `kubectl port-forward` (see README).
+# Contains the k3s admin client certificate and key — environment-specific and
+# secret, so it must not be committed.
+k3s.kubeconfig
+
+# The repo root .gitignore ignores app.bicep and bicepconfig.json (rad scaffolding).
+# These are intentional sample files for this example, so re-include them.
+!app.bicep
+!bicepconfig.json

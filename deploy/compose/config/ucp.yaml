@@ -1,0 +1,82 @@
+# UCP configuration for the Docker Compose deployment.
+#
+# Adapted from build/configs/ucp.yaml (the OS-process debug config). The two
+# meaningful differences vs. the debug file are:
+#   * service hostnames replace "localhost" (Compose service DNS), and
+#   * the manifest directory points at the path baked into the ucpd image.
+#
+# The control-plane state lives in PostgreSQL (databaseProvider: postgresql)
+# instead of the Kubernetes API server, exactly like the debug setup. A
+# Kubernetes API (the k3s container) is still required for secretProvider:
+# kubernetes and for the dynamic-rp encryption key.
+environment:
+  name: "self-hosted"
+  roleLocation: "global"
+
+server:
+  port: 9000
+  pathBase: /apis/api.ucp.dev/v1alpha3
+
+databaseProvider:
+  provider: "postgresql"
+  postgresql:
+    url: "postgresql://ucp:radius_pass@postgres:5432/ucp?sslmode=disable"
+
+secretProvider:
+  provider: "kubernetes"
+
+queueProvider:
+  provider: "inmemory"
+  name: 'ucp'
+
+profilerProvider:
+  enabled: false
+  port: 6061
+
+initialization:
+  planes:
+    - id: "/planes/radius/local"
+      properties:
+        resourceProviders:
+          Applications.Core: "http://applications-rp.radius-system:5443"
+          Radius.Core: "http://applications-rp.radius-system:5443"
+          Applications.Messaging: "http://applications-rp.radius-system:5443"
+          Applications.Dapr: "http://applications-rp.radius-system:5443"
+          Applications.Datastores: "http://applications-rp.radius-system:5443"
+          Microsoft.Resources: "http://bicep-de.radius-system:6443"
+        kind: "UCPNative"
+    - id: "/planes/aws/aws"
+      properties:
+        kind: "AWS"
+    - id: "/planes/azure/azure"
+      properties:
+        kind: "Azure"
+  manifestDirectory: "/manifest/built-in-providers"
+
+identity:
+  authMethod: default
+
+ucp:
+  kind: direct
+  direct:
+    endpoint: "http://ucp:9000/apis/api.ucp.dev/v1alpha3"
+
+routing:
+  defaultDownstreamEndpoint: "http://dynamic-rp:8082"
+
+metricsProvider:
+  enabled: false
+  serviceName: "ucp"
+  prometheus:
+    path: "/metrics"
+    port: 9090
+
+logging:
+  level: "info"
+  json: true
+
+tracerProvider:
+  enabled: false
+  serviceName: "ucp"
+  zipkin:
+    url: "http://localhost:9411/api/v2/spans"

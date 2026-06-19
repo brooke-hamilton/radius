@@ -1,0 +1,53 @@
+# Dynamic RP configuration for the Docker Compose deployment.
+# Adapted from build/configs/dynamic-rp.yaml: service hostnames replace
+# "localhost" and the Terraform working directory points at a writable path.
+#
+# kubernetes.kind: default makes dynamic-rp build a Kubernetes client from the
+# mounted kubeconfig. It needs the radius-system/radius-encryption-key secret
+# (created by the bootstrap-k8s service) to start.
+environment:
+  name: "self-hosted"
+  roleLocation: "global"
+databaseProvider:
+  provider: "postgresql"
+  postgresql:
+    url: "postgresql://ucp:radius_pass@postgres:5432/ucp?sslmode=disable"
+queueProvider:
+  provider: "inmemory"
+  name: dynamic-rp
+secretProvider:
+  provider: "kubernetes"
+profilerProvider:
+  enabled: false
+  port: 6062
+metricsProvider:
+  enabled: false
+  serviceName: "dynamic-rp"
+  prometheus:
+    path: "/metrics"
+    port: 9092
+tracerProvider:
+  enabled: false
+  serviceName: "dynamic-rp"
+  zipkin:
+    url: "http://localhost:9411/api/v2/spans"
+kubernetes:
+  kind: default
+server:
+  host: "0.0.0.0"
+  port: 8082
+workerServer:
+  maxOperationConcurrency: 10
+  maxOperationRetryCount: 2
+ucp:
+  kind: direct
+  direct:
+    endpoint: "http://ucp:9000/apis/api.ucp.dev/v1alpha3"
+logging:
+  level: "info"
+  json: false
+bicep:
+  deleteRetryCount: 20
+  deleteRetryDelaySeconds: 60
+terraform:
+  path: "/tmp/terraform"

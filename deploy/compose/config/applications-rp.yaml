@@ -1,0 +1,53 @@
+# Applications RP configuration for the Docker Compose deployment.
+# Adapted from build/configs/applications-rp.yaml: service hostnames replace
+# "localhost" and the Terraform working directory points at a writable path.
+environment:
+  name: "self-hosted"
+  roleLocation: "global"
+databaseProvider:
+  provider: "postgresql"
+  postgresql:
+    url: "postgresql://applications_rp:radius_pass@postgres:5432/applications_rp?sslmode=disable"
+queueProvider:
+  provider: "inmemory"
+  name: radius
+secretProvider:
+  provider: "kubernetes"
+metricsProvider:
+  enabled: false
+  serviceName: applications-rp
+  prometheus:
+    path: "/metrics"
+    port: 9092
+profilerProvider:
+  enabled: false
+  port: 6060
+featureFlags:
+  - "PLACEHOLDER"
+server:
+  host: "0.0.0.0"
+  # 5443 matches the address the ucpd image's built-in (self-hosted) provider
+  # manifests use to route to Applications.Core et al.
+  # (http://applications-rp.radius-system:5443).
+  port: 5443
+  enableArmAuth: false
+workerServer:
+  maxOperationConcurrency: 10
+  maxOperationRetryCount: 2
+ucp:
+  kind: direct
+  direct:
+    endpoint: "http://ucp:9000/apis/api.ucp.dev/v1alpha3"
+logging:
+  level: "info"
+  json: false
+tracerProvider:
+  enabled: false
+  serviceName: applications-rp
+  zipkin:
+    url: "http://localhost:9411/api/v2/spans"
+bicep:
+  deleteRetryCount: 20
+  deleteRetryDelaySeconds: 60
+terraform:
+  path: "/tmp/terraform"
