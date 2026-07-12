@@ -248,6 +248,7 @@ configure_workspace() {
 
 install_control_plane() {
     local cluster="$1"
+    local install_needs_recovery=false
 
     k3d cluster create "${cluster}" \
         --network "${NETWORK_NAME}" \
@@ -261,7 +262,7 @@ install_control_plane() {
         --namespace radius-system \
         --from-file=kubeconfig="${INTERNAL_WORKLOAD_KUBECONFIG}"
 
-    rad install kubernetes \
+    if rad install kubernetes \
         --chart "${REPOSITORY_ROOT}/deploy/Chart" \
         --set database.enabled=true \
         --set global.targetCluster.enabled=true \
@@ -275,10 +276,30 @@ install_control_plane() {
         --set \
         "ucp.image=${CLUSTER_REGISTRY}/ucpd,ucp.tag=${DOCKER_TAG_VERSION}" \
         --set \
-        "bicep.image=${CLUSTER_REGISTRY}/bicep,bicep.tag=${DOCKER_TAG_VERSION}"
+        "bicep.image=${CLUSTER_REGISTRY}/bicep,bicep.tag=${DOCKER_TAG_VERSION}"; then
+        :
+    else
+        install_needs_recovery=true
+        if ! kubectl get deployment/ucp statefulset/database \
+            --namespace radius-system >/dev/null; then
+            echo "Radius Helm installation did not complete." >&2
+            return 1
+        fi
+        echo "Radius was installed, but its initial API readiness check failed."
+    fi
 
     # Deployment Engine and dashboard are built in separate repositories. Their
     # chart defaults intentionally remain on the compatible edge channel.
+    kubectl wait --for=condition=Ready pod/database-0 \
+        --namespace radius-system \
+        --timeout=300s
+    if [[ "${install_needs_recovery}" == "true" ]]; then
+        kubectl rollout restart deployment/ucp \
+            --namespace radius-system
+        kubectl rollout status deployment/ucp \
+            --namespace radius-system \
+            --timeout=300s
+    fi
     kubectl wait --for=condition=Available deployment --all \
         --namespace radius-system \
         --timeout=300s
