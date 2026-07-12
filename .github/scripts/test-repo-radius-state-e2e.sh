@@ -28,7 +28,7 @@ readonly INTERNAL_WORKLOAD_KUBECONFIG="${WORK_DIR}/workload-internal.kubeconfig"
 readonly REGISTRY_CONFIG="${WORK_DIR}/registries.yaml"
 readonly APP_FILE="${WORK_DIR}/repo-radius-state-app.bicep"
 
-: "${DOCKER_REGISTRY:?DOCKER_REGISTRY must be set}"
+: "${LOCAL_DOCKER_REGISTRY:?LOCAL_DOCKER_REGISTRY must be set}"
 : "${DOCKER_TAG_VERSION:?DOCKER_TAG_VERSION must be set}"
 : "${GH_TOKEN:?GH_TOKEN must be set}"
 : "${RADIUS_STATE_ARCHIVE:?RADIUS_STATE_ARCHIVE must be set}"
@@ -222,7 +222,7 @@ publish_branch_artifacts() {
     local image
     for image in ucpd applications-rp dynamic-rp controller bicep; do
         docker push \
-            "${DOCKER_REGISTRY}/${image}:${DOCKER_TAG_VERSION}"
+            "${LOCAL_DOCKER_REGISTRY}/${image}:${DOCKER_TAG_VERSION}"
     done
 
     cp "${SOURCE_APP_FILE}" "${APP_FILE}"

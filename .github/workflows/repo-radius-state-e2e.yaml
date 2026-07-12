@@ -27,12 +27,12 @@ permissions:
 
 concurrency:
   group: repo-radius-state-e2e-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
-  DOCKER_REGISTRY: localhost:5000
+  LOCAL_DOCKER_REGISTRY: localhost:5000
   DOCKER_TAG_VERSION: repo-radius-${{ github.run_id }}-${{ github.run_attempt }}
-  RADIUS_STATE_ARCHIVE: run-${{ github.run_id }}-${{ github.run_attempt }}
+  RADIUS_STATE_ARCHIVE: repo-radius-state-e2e-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   state-rehydration:
@@ -60,16 +60,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install k3d
-        env:
-          K3D_INSTALL_SHA256: 0f6bd9a3ab8ea8625843b21657a6538f117975bb2823b73200dc8b92ccc626de
-          K3D_VERSION: v5.9.0
-        run: |
-          curl -fsSL \
-            "https://raw.githubusercontent.com/k3d-io/k3d/${K3D_VERSION}/install.sh" \
-            -o "${RUNNER_TEMP}/install-k3d.sh"
-          echo "${K3D_INSTALL_SHA256}  ${RUNNER_TEMP}/install-k3d.sh" \
-            | sha256sum -c -
-          TAG="${K3D_VERSION}" bash "${RUNNER_TEMP}/install-k3d.sh"
+        run: make install-k3d
 
       - name: Install ORAS
         uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
@@ -80,7 +71,7 @@ jobs:
           echo "${HOME}/.rad/bin" >> "${GITHUB_PATH}"
 
       - name: Build branch CLI and container images
-        run: make build docker-build
+        run: DOCKER_REGISTRY="${LOCAL_DOCKER_REGISTRY}" make build docker-build
 
       - name: Install branch CLI
         run: |
