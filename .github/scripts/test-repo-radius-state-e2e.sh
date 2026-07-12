@@ -390,7 +390,9 @@ deploy_phase() {
     local environment_id
 
     environment_id="$(rad env show "${ENVIRONMENT_NAME}" \
-        --output json | jq --raw-output '.id // .Id')"
+        --output json \
+        | jq --slurp --raw-output \
+            'map(select(type == "object")) | first | (.id // .Id // empty)')"
     if [[ -z "${environment_id}" || "${environment_id}" == "null" ]]; then
         echo "Could not resolve the Radius environment ID." >&2
         return 1
