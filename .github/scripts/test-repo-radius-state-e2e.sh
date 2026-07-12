@@ -28,7 +28,6 @@ readonly INTERNAL_WORKLOAD_KUBECONFIG="${WORK_DIR}/workload-internal.kubeconfig"
 readonly REGISTRY_CONFIG="${WORK_DIR}/registries.yaml"
 readonly APP_FILE="${WORK_DIR}/repo-radius-state-app.bicep"
 
-: "${BICEP_TYPES_VERSION:?BICEP_TYPES_VERSION must be set}"
 : "${DOCKER_REGISTRY:?DOCKER_REGISTRY must be set}"
 : "${DOCKER_TAG_VERSION:?DOCKER_TAG_VERSION must be set}"
 : "${RADIUS_STATE_ARCHIVE:?RADIUS_STATE_ARCHIVE must be set}"
@@ -178,12 +177,6 @@ publish_branch_artifacts() {
             "${DOCKER_REGISTRY}/${image}:${DOCKER_TAG_VERSION}"
     done
 
-    bicep publish-extension \
-        "${REPOSITORY_ROOT}/hack/bicep-types-radius/generated/index.json" \
-        --target \
-        "br:${DOCKER_REGISTRY}/radius:${BICEP_TYPES_VERSION}" \
-        --force
-
     cp "${SOURCE_APP_FILE}" "${APP_FILE}"
     cat >"${WORK_DIR}/bicepconfig.json" <<EOF
 {
@@ -191,7 +184,7 @@ publish_branch_artifacts() {
     "extensibility": true
   },
   "extensions": {
-    "radius": "br:${DOCKER_REGISTRY}/radius:${BICEP_TYPES_VERSION}"
+    "radius": "br:biceptypes.azurecr.io/radius:latest"
   }
 }
 EOF
