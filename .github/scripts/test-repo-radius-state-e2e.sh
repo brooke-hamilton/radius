@@ -128,8 +128,16 @@ delete_state_manifest() {
         return 1
     fi
 
-    gh api --method DELETE \
-        "/${package_scope}/${owner}/packages/container/${package_name}/versions/${version_ids[0]}"
+    local package_api
+    package_api="/${package_scope}/${owner}/packages/container/${package_name}"
+    local version_count
+    version_count="$(gh api "${package_api}" --jq '.version_count')"
+    if ((version_count == 1)); then
+        gh api --method DELETE "${package_api}"
+    else
+        gh api --method DELETE \
+            "${package_api}/versions/${version_ids[0]}"
+    fi
 
     local _
     for _ in {1..30}; do
