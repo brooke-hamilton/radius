@@ -30,6 +30,7 @@ readonly APP_FILE="${WORK_DIR}/repo-radius-state-app.bicep"
 
 : "${DOCKER_REGISTRY:?DOCKER_REGISTRY must be set}"
 : "${DOCKER_TAG_VERSION:?DOCKER_TAG_VERSION must be set}"
+: "${GH_TOKEN:?GH_TOKEN must be set}"
 : "${RADIUS_STATE_ARCHIVE:?RADIUS_STATE_ARCHIVE must be set}"
 : "${RADIUS_STATE_BACKEND:?RADIUS_STATE_BACKEND must be set}"
 : "${RADIUS_STATE_REGISTRY:?RADIUS_STATE_REGISTRY must be set}"
@@ -97,16 +98,55 @@ delete_state_manifest() {
         return "${status}"
     fi
 
-    oras manifest delete --force "${STATE_REFERENCE}"
-    if manifest_exists; then
-        echo "State manifest still exists after cleanup: ${STATE_REFERENCE}" >&2
-        return 1
+    local registry_path="${RADIUS_STATE_REGISTRY#ghcr.io/}"
+    local owner="${registry_path%%/*}"
+    local package_name="${registry_path#*/}"
+    local owner_type
+    owner_type="$(gh api "/users/${owner}" --jq '.type')"
+
+    local package_scope
+    if [[ "${owner_type}" == "Organization" ]]; then
+        package_scope="orgs"
     else
-        status=$?
+        package_scope="users"
     fi
-    if ((status != 1)); then
+
+    local versions
+    versions="$(gh api --paginate \
+        "/${package_scope}/${owner}/packages/container/${package_name}/versions?per_page=100")"
+
+    local -a version_ids
+    mapfile -t version_ids < <(
+        jq --slurp --raw-output --arg tag "${RADIUS_STATE_ARCHIVE}" \
+            '[.[][] |
+              select(any(.metadata.container.tags[]?; . == $tag)) |
+              .id] | .[]' <<<"${versions}"
+    )
+    if ((${#version_ids[@]} != 1)); then
+        echo "Expected one GHCR package version for ${STATE_REFERENCE}," \
+            "found ${#version_ids[@]}." >&2
+        return 1
+    fi
+
+    gh api --method DELETE \
+        "/${package_scope}/${owner}/packages/container/${package_name}/versions/${version_ids[0]}"
+
+    local _
+    for _ in {1..30}; do
+        if manifest_exists; then
+            sleep 1
+            continue
+        else
+            status=$?
+        fi
+        if ((status == 1)); then
+            return 0
+        fi
         return "${status}"
-    fi
+    done
+
+    echo "State manifest still exists after cleanup: ${STATE_REFERENCE}" >&2
+    return 1
 }
 
 cleanup() {

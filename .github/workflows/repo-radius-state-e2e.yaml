@@ -91,6 +91,7 @@ jobs:
 
       - name: Prove GHCR state rehydration
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RADIUS_STATE_BACKEND: oci
           RADIUS_STATE_REGISTRY: ghcr.io/${{ github.repository_owner }}/radius-repo-state-e2e
         run: bash ./.github/scripts/test-repo-radius-state-e2e.sh
