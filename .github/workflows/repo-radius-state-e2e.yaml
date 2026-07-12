@@ -1,0 +1,115 @@
+# ------------------------------------------------------------
+# Copyright 2023 The Radius Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ------------------------------------------------------------
+
+# yaml-language-server: $schema=https://www.schemastore.org/github-workflow.json
+---
+name: Repo Radius GHCR State E2E
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write # Push and delete this repository's GHCR state package.
+
+concurrency:
+  group: repo-radius-state-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  BICEP_TYPES_VERSION: repo-radius-${{ github.run_id }}-${{ github.run_attempt }}
+  DOCKER_REGISTRY: localhost:5000
+  DOCKER_TAG_VERSION: repo-radius-${{ github.run_id }}-${{ github.run_attempt }}
+  RADIUS_STATE_ARCHIVE: run-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  state-rehydration:
+    name: Persist and rehydrate Radius state
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout dispatched ref
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .node-version
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install k3d
+        env:
+          K3D_INSTALL_SHA256: 0f6bd9a3ab8ea8625843b21657a6538f117975bb2823b73200dc8b92ccc626de
+          K3D_VERSION: v5.9.0
+        run: |
+          curl -fsSL \
+            "https://raw.githubusercontent.com/k3d-io/k3d/${K3D_VERSION}/install.sh" \
+            -o "${RUNNER_TEMP}/install-k3d.sh"
+          echo "${K3D_INSTALL_SHA256}  ${RUNNER_TEMP}/install-k3d.sh" \
+            | sha256sum -c -
+          TAG="${K3D_VERSION}" bash "${RUNNER_TEMP}/install-k3d.sh"
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+
+      - name: Install build prerequisites
+        run: |
+          make install-yq
+          make install-bicep BICEP_INSTALL_DIR="${HOME}/.rad/bin"
+          echo "${HOME}/.rad/bin" >> "${GITHUB_PATH}"
+
+      - name: Generate Radius Bicep extension
+        run: make generate-bicep-types VERSION="${BICEP_TYPES_VERSION}"
+
+      - name: Build branch CLI and container images
+        run: make build docker-build
+
+      - name: Install branch CLI
+        run: |
+          install -D -m 0755 \
+            ./dist/linux_amd64/release/rad \
+            "${HOME}/.local/bin/rad"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: Prove GHCR state rehydration
+        env:
+          RADIUS_STATE_BACKEND: oci
+          RADIUS_STATE_REGISTRY: ghcr.io/${{ github.repository_owner }}/radius-repo-state-e2e
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repo-radius-state-e2e-diagnostics
+          path: dist/repo-radius-state-e2e/
+          if-no-files-found: ignore
+          retention-days: 3
