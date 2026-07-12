@@ -399,6 +399,7 @@ deploy_phase() {
     fi
 
     rad deploy "${APP_FILE}" \
+        --environment "${ENVIRONMENT_NAME}" \
         --parameters "environment=${environment_id}" \
         --parameters "deploymentPhase=${phase}"
 }
