@@ -105,6 +105,8 @@ These tests run automatically for every PR via the `functional-test-noncloud.yam
 
 Separate scheduled jobs (`purge-azure-test-resources.yaml` and `purge-aws-test-resources.yaml`) delete cloud resources left behind when a run is cancelled or times out.
 
+The standalone [`repo-radius-state-e2e.yaml`](../contributing-code-github-workflows/#repo-radius-ghcr-state-test) workflow runs daily to verify that an ephemeral Radius control plane can save its state to a private GHCR package, restore that state into a replacement control plane, and continue managing an existing workload on a separate target cluster. It is intentionally separate from the non-cloud matrix so its `packages: write` permission and lifecycle phases remain isolated. Maintainers must [precreate or verify the private state package](../contributing-code-github-workflows/#repo-radius-ghcr-state-test) before enabling the scheduled run.
+
 ## Verification
 
 - Each group prints `ok` (or the `gotestsum` summary) per package and `go test` exits non-zero on any failure.

@@ -27,6 +27,10 @@ readonly HOST_WORKLOAD_KUBECONFIG="${WORK_DIR}/workload-host.kubeconfig"
 readonly INTERNAL_WORKLOAD_KUBECONFIG="${WORK_DIR}/workload-internal.kubeconfig"
 readonly REGISTRY_CONFIG="${WORK_DIR}/registries.yaml"
 readonly APP_FILE="${WORK_DIR}/repo-radius-state-app.bicep"
+readonly STATE_OWNED_MARKER="${WORK_DIR}/state-owned"
+readonly SAVED_DIGEST_FILE="${WORK_DIR}/saved-state-digest"
+readonly PHASE_DIR="${WORK_DIR}/phases"
+readonly BOOTSTRAP_TAG="bootstrap"
 
 : "${LOCAL_DOCKER_REGISTRY:?LOCAL_DOCKER_REGISTRY must be set}"
 : "${DOCKER_TAG_VERSION:?DOCKER_TAG_VERSION must be set}"
@@ -39,10 +43,132 @@ export RADIUS_PREVIEW=true
 export RADIUS_STATE_REGISTRY="${RADIUS_STATE_REGISTRY,,}"
 readonly STATE_REFERENCE="${RADIUS_STATE_REGISTRY}:${RADIUS_STATE_ARCHIVE}"
 
-state_owned_by_run=false
+PACKAGE_API=""
+PACKAGE_NAME=""
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") <phase>
+
+Phases:
+  validate-state-package
+  prepare-workload
+  install-initial-control-plane
+  deploy-initial
+  persist-state
+  replace-control-plane
+  restore-state
+  update-workload
+  diagnostics
+  cleanup
+  all
+EOF
+}
+
+mark_phase() {
+    mkdir -p "${PHASE_DIR}"
+    touch "${PHASE_DIR}/$1"
+}
+
+begin_phase() {
+    mkdir -p "${WORK_DIR}" "${PHASE_DIR}"
+    printf '%s\n' "$1" >"${WORK_DIR}/current-phase"
+    append_summary ""
+    append_summary "### $2"
+}
+
+require_phase() {
+    local phase="$1"
+    if [[ ! -f "${PHASE_DIR}/${phase}" ]]; then
+        echo "Required phase '${phase}' has not completed." >&2
+        return 1
+    fi
+}
+
+append_summary() {
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        printf '%s\n' "$*" >>"${GITHUB_STEP_SUMMARY}"
+    fi
+}
+
+urlencode() {
+    jq -nr --arg value "$1" '$value | @uri'
+}
+
+configure_package_api() {
+    local registry_path owner owner_type owner_scope
+    registry_path="${RADIUS_STATE_REGISTRY#ghcr.io/}"
+    owner="${registry_path%%/*}"
+    PACKAGE_NAME="${registry_path#*/}"
+    if [[ "${registry_path}" == "${RADIUS_STATE_REGISTRY}" ||
+        -z "${owner}" || -z "${PACKAGE_NAME}" ]]; then
+        echo "RADIUS_STATE_REGISTRY must match ghcr.io/<owner>/<package>." >&2
+        return 1
+    fi
+    if [[ ! "${PACKAGE_NAME}" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+        echo "Invalid GHCR package name: ${PACKAGE_NAME}" >&2
+        return 1
+    fi
+
+    owner_type="$(gh api "/users/${owner}" --jq '.type')"
+    case "${owner_type}" in
+        Organization) owner_scope="orgs" ;;
+        User) owner_scope="users" ;;
+        *)
+            echo "Unsupported GitHub owner type: ${owner_type}" >&2
+            return 1
+            ;;
+    esac
+    PACKAGE_API="/${owner_scope}/$(urlencode "${owner}")/packages/container/$(urlencode "${PACKAGE_NAME}")"
+}
+
+fetch_package_metadata() {
+    configure_package_api
+    mkdir -p "${WORK_DIR}"
+    gh api "${PACKAGE_API}" >"${WORK_DIR}/package.json"
+}
+
+verify_package_metadata() {
+    local visibility linked_repository
+    visibility="$(jq -r '.visibility // empty' "${WORK_DIR}/package.json")"
+    case "${visibility}" in
+        private | internal) ;;
+        *)
+            echo "State package must be private or internal; found ${visibility:-missing}." >&2
+            return 1
+            ;;
+    esac
+
+    linked_repository="$(jq -r '.repository.full_name // empty' \
+        "${WORK_DIR}/package.json")"
+    if [[ -n "${GITHUB_REPOSITORY:-}" &&
+        "${linked_repository,,}" != "${GITHUB_REPOSITORY,,}" ]]; then
+        echo "State package is linked to ${linked_repository:-no repository}; expected ${GITHUB_REPOSITORY}." >&2
+        return 1
+    fi
+}
 
 collect_diagnostics() {
     mkdir -p "${DIAGNOSTICS_DIR}"
+
+    if [[ -d "${PHASE_DIR}" ]]; then
+        find "${PHASE_DIR}" -maxdepth 1 -type f -printf '%f\n' \
+            | sort >"${DIAGNOSTICS_DIR}/completed-phases.txt"
+    fi
+    if [[ -f "${SAVED_DIGEST_FILE}" ]]; then
+        cp "${SAVED_DIGEST_FILE}" \
+            "${DIAGNOSTICS_DIR}/saved-state-digest.txt"
+    fi
+    if fetch_package_metadata; then
+        jq '{
+          name,
+          visibility,
+          repository: .repository.full_name,
+          version_count,
+          html_url
+        }' "${WORK_DIR}/package.json" \
+            >"${DIAGNOSTICS_DIR}/package-metadata.json"
+    fi
 
     rad app list --output json \
         >"${DIAGNOSTICS_DIR}/rad-app-list.json" 2>&1 || true
@@ -98,22 +224,10 @@ delete_state_manifest() {
         return "${status}"
     fi
 
-    local registry_path="${RADIUS_STATE_REGISTRY#ghcr.io/}"
-    local owner="${registry_path%%/*}"
-    local package_name="${registry_path#*/}"
-    local owner_type
-    owner_type="$(gh api "/users/${owner}" --jq '.type')"
-
-    local package_scope
-    if [[ "${owner_type}" == "Organization" ]]; then
-        package_scope="orgs"
-    else
-        package_scope="users"
-    fi
-
+    configure_package_api
     local versions
     versions="$(gh api --paginate \
-        "/${package_scope}/${owner}/packages/container/${package_name}/versions?per_page=100")"
+        "${PACKAGE_API}/versions?per_page=100")"
 
     local -a version_ids
     mapfile -t version_ids < <(
@@ -128,16 +242,14 @@ delete_state_manifest() {
         return 1
     fi
 
-    local package_api
-    package_api="/${package_scope}/${owner}/packages/container/${package_name}"
     local version_count
-    version_count="$(gh api "${package_api}" --jq '.version_count')"
+    version_count="$(gh api "${PACKAGE_API}" --jq '.version_count')"
     if ((version_count == 1)); then
-        gh api --method DELETE "${package_api}"
-    else
-        gh api --method DELETE \
-            "${package_api}/versions/${version_ids[0]}"
+        echo "Refusing to delete the final version of precreated package ${RADIUS_STATE_REGISTRY}." >&2
+        return 1
     fi
+    gh api --method DELETE \
+        "${PACKAGE_API}/versions/${version_ids[0]}"
 
     local _
     for _ in {1..30}; do
@@ -148,13 +260,19 @@ delete_state_manifest() {
             status=$?
         fi
         if ((status == 1)); then
-            return 0
+            break
         fi
         return "${status}"
     done
 
-    echo "State manifest still exists after cleanup: ${STATE_REFERENCE}" >&2
-    return 1
+    if manifest_exists; then
+        echo "State manifest still exists after cleanup: ${STATE_REFERENCE}" >&2
+        return 1
+    fi
+    fetch_package_metadata
+    verify_package_metadata
+    oras manifest fetch --descriptor \
+        "${RADIUS_STATE_REGISTRY}:${BOOTSTRAP_TAG}" >/dev/null
 }
 
 cleanup() {
@@ -166,7 +284,7 @@ cleanup() {
         collect_diagnostics
     fi
 
-    if [[ "${state_owned_by_run}" == "true" ]]; then
+    if [[ -f "${STATE_OWNED_MARKER}" ]]; then
         delete_state_manifest || cleanup_result=1
     fi
     k3d cluster delete "${CONTROL_PLANE_A}" >/dev/null 2>&1
@@ -176,6 +294,11 @@ cleanup() {
     docker network rm "${NETWORK_NAME}" >/dev/null 2>&1
     rm -rf "${WORK_DIR}"
 
+    if ((cleanup_result == 0)); then
+        append_summary "- State version cleanup: succeeded"
+    else
+        append_summary "- State version cleanup: failed"
+    fi
     if ((result == 0 && cleanup_result != 0)); then
         result="${cleanup_result}"
     fi
@@ -486,19 +609,44 @@ state_digest() {
         | jq --exit-status --raw-output '.digest'
 }
 
-main() {
-    trap cleanup EXIT
+phase_validate_state_package() {
+    begin_phase "validate-state-package" "Validate private state package"
     mkdir -p "${WORK_DIR}" "${DIAGNOSTICS_DIR}"
+    fetch_package_metadata
+    verify_package_metadata
+    oras manifest fetch --descriptor \
+        "${RADIUS_STATE_REGISTRY}:${BOOTSTRAP_TAG}" \
+        >"${WORK_DIR}/bootstrap-descriptor.json"
+    assert_state_absent
+    mark_phase "validate-state-package"
+    append_summary "- Package: \`${RADIUS_STATE_REGISTRY}\`"
+    append_summary "- Visibility: $(jq -r '.visibility' \
+        "${WORK_DIR}/package.json")"
+}
+
+phase_prepare_workload() {
+    begin_phase "prepare-workload" "Prepare target workload cluster"
+    require_phase "validate-state-package"
     write_registry_config
     start_registry
     publish_branch_artifacts
     create_workload_cluster
-    assert_state_absent
+    mark_phase "prepare-workload"
+}
 
+phase_install_initial_control_plane() {
+    begin_phase \
+        "install-initial-control-plane" \
+        "Install first Radius control plane"
+    require_phase "prepare-workload"
     install_control_plane "${CONTROL_PLANE_A}"
-    # Repo Radius always invokes startup. Its first-run empty archive is a
-    # deliberate no-op and proves the workflow needs no special first-run path.
     rad startup
+    mark_phase "install-initial-control-plane"
+}
+
+phase_deploy_initial() {
+    begin_phase "deploy-initial" "Deploy and verify initial application"
+    require_phase "install-initial-control-plane"
     rad env create "${ENVIRONMENT_NAME}" \
         --kubernetes-namespace "${WORKLOAD_NAMESPACE}"
     deploy_phase "before-restore"
@@ -507,13 +655,27 @@ main() {
     assert_workload_phase "before-restore" \
         "${DIAGNOSTICS_DIR}/workload-before-restore.json"
     assert_absent_from_control_plane "${CONTROL_PLANE_A}"
+    mark_phase "deploy-initial"
+}
 
+phase_persist_state() {
+    begin_phase "persist-state" "Persist Radius state to GHCR"
+    require_phase "deploy-initial"
+    # The preflight proved this run-unique tag was absent. Claim it before
+    # shutdown so cleanup removes any tag left by a partially failed upload.
+    touch "${STATE_OWNED_MARKER}"
     rad shutdown
-    state_owned_by_run=true
     local saved_digest
     saved_digest="$(state_digest)"
+    printf '%s\n' "${saved_digest}" >"${SAVED_DIGEST_FILE}"
+    mark_phase "persist-state"
     echo "Saved Radius state as ${saved_digest}."
+    append_summary "- Saved state digest: \`${saved_digest}\`"
+}
 
+phase_replace_control_plane() {
+    begin_phase "replace-control-plane" "Replace Radius control plane"
+    require_phase "persist-state"
     k3d cluster delete "${CONTROL_PLANE_A}"
     if cluster_exists "${CONTROL_PLANE_A}"; then
         echo "The first control plane was not deleted." >&2
@@ -521,25 +683,91 @@ main() {
     fi
 
     install_control_plane "${CONTROL_PLANE_B}"
+    mark_phase "replace-control-plane"
+}
+
+phase_restore_state() {
+    begin_phase "restore-state" "Restore and verify Radius state"
+    require_phase "replace-control-plane"
+    [[ -s "${SAVED_DIGEST_FILE}" ]] \
+        || {
+            echo "Saved state digest is missing." >&2
+            return 1
+        }
     rad startup
     assert_application_listed \
         "${DIAGNOSTICS_DIR}/apps-after-restore.json"
 
-    local restored_digest
+    local restored_digest saved_digest
+    saved_digest="$(<"${SAVED_DIGEST_FILE}")"
     restored_digest="$(state_digest)"
     if [[ "${restored_digest}" != "${saved_digest}" ]]; then
         echo "State digest changed during restore." >&2
         return 1
     fi
+    mark_phase "restore-state"
+    append_summary "- Restored state digest: \`${restored_digest}\`"
+}
 
+phase_update_workload() {
+    begin_phase "update-workload" "Update and verify existing workload"
+    require_phase "restore-state"
     deploy_phase "after-restore"
     assert_workload_phase "after-restore" \
         "${DIAGNOSTICS_DIR}/workload-after-restore.json"
     assert_absent_from_control_plane "${CONTROL_PLANE_B}"
-
+    mark_phase "update-workload"
+    append_summary "- Result: state rehydration and workload update succeeded"
     echo "Repo Radius GHCR state rehydration succeeded."
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    main "$@"
-fi
+phase_diagnostics() {
+    append_summary ""
+    append_summary "### Failure diagnostics"
+    if [[ -f "${WORK_DIR}/current-phase" ]]; then
+        append_summary "- Failed phase: \`$(<"${WORK_DIR}/current-phase")\`"
+    fi
+    append_summary "- Artifact: \`repo-radius-state-e2e-diagnostics\`"
+    collect_diagnostics
+}
+
+run_all() {
+    trap cleanup EXIT
+    phase_validate_state_package
+    phase_prepare_workload
+    phase_install_initial_control_plane
+    phase_deploy_initial
+    phase_persist_state
+    phase_replace_control_plane
+    phase_restore_state
+    phase_update_workload
+    trap - EXIT
+    cleanup
+}
+
+main() {
+    local phase="${1:-all}"
+    case "${phase}" in
+        validate-state-package) phase_validate_state_package ;;
+        prepare-workload) phase_prepare_workload ;;
+        install-initial-control-plane)
+            phase_install_initial_control_plane
+            ;;
+        deploy-initial) phase_deploy_initial ;;
+        persist-state) phase_persist_state ;;
+        replace-control-plane) phase_replace_control_plane ;;
+        restore-state) phase_restore_state ;;
+        update-workload) phase_update_workload ;;
+        diagnostics) phase_diagnostics ;;
+        cleanup) cleanup ;;
+        all) run_all ;;
+        -h | --help) usage ;;
+        *)
+            echo "Unknown phase: ${phase}" >&2
+            usage >&2
+            return 2
+            ;;
+    esac
+}
+
+main "$@"
