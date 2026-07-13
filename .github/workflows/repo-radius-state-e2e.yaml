@@ -20,6 +20,11 @@ name: Repo Radius GHCR State E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      state_package:
+        description: Existing private GHCR package used for Radius state
+        required: true
+        default: radius-repo-state-e2e-private-control
 
 permissions:
   contents: read
@@ -84,7 +89,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RADIUS_STATE_BACKEND: oci
-          RADIUS_STATE_REGISTRY: ghcr.io/${{ github.repository_owner }}/radius-repo-state-e2e-v2
+          RADIUS_STATE_REGISTRY: ghcr.io/${{ github.repository_owner }}/${{ inputs.state_package }}
         run: bash ./.github/scripts/test-repo-radius-state-e2e.sh
 
       - name: Upload failure diagnostics
