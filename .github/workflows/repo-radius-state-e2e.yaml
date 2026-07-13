@@ -23,27 +23,34 @@ on:
     inputs:
       state_package:
         description: Existing private GHCR package used for Radius state
-        required: true
-        default: radius-repo-state-e2e-private-control
+        required: false
+        default: radius-repo-state-e2e
+  schedule:
+    # Run daily at 04:17 UTC, outside the non-cloud functional-test schedule.
+    - cron: 17 4 * * *
 
 permissions:
   contents: read
   packages: write # Push and delete this repository's GHCR state package.
 
 concurrency:
-  group: repo-radius-state-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  group: repo-radius-state-e2e-${{ inputs.state_package || 'radius-repo-state-e2e' }}
+  cancel-in-progress: false
 
 env:
   LOCAL_DOCKER_REGISTRY: localhost:5000
   DOCKER_TAG_VERSION: repo-radius-${{ github.run_id }}-${{ github.run_attempt }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  RADIUS_STATE_BACKEND: oci
   RADIUS_STATE_ARCHIVE: repo-radius-state-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+  RADIUS_STATE_REGISTRY: ghcr.io/${{ github.repository_owner }}/${{ inputs.state_package || 'radius-repo-state-e2e' }}
 
 jobs:
   state-rehydration:
     name: Persist and rehydrate Radius state
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'radius-project/radius'
     steps:
       - name: Checkout dispatched ref
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -75,8 +82,20 @@ jobs:
           make install-bicep BICEP_INSTALL_DIR="${HOME}/.rad/bin"
           echo "${HOME}/.rad/bin" >> "${GITHUB_PATH}"
 
-      - name: Build branch CLI and container images
-        run: DOCKER_REGISTRY="${LOCAL_DOCKER_REGISTRY}" make build docker-build
+      - name: Validate private state package
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh validate-state-package
+
+      - name: Build Repo Radius test artifacts
+        env:
+          DOCKER_REGISTRY: ${{ env.LOCAL_DOCKER_REGISTRY }}
+        run: |
+          make copy-manifests \
+            build-rad \
+            docker-build-ucpd \
+            docker-build-applications-rp \
+            docker-build-dynamic-rp \
+            docker-build-controller \
+            docker-build-bicep
 
       - name: Install branch CLI
         run: |
@@ -85,12 +104,30 @@ jobs:
             "${HOME}/.local/bin/rad"
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
-      - name: Prove GHCR state rehydration
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RADIUS_STATE_BACKEND: oci
-          RADIUS_STATE_REGISTRY: ghcr.io/${{ github.repository_owner }}/${{ inputs.state_package }}
-        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh
+      - name: Prepare target workload cluster
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh prepare-workload
+
+      - name: Install first Radius control plane
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh install-initial-control-plane
+
+      - name: Deploy and verify initial application
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh deploy-initial
+
+      - name: Persist Radius state to GHCR
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh persist-state
+
+      - name: Replace Radius control plane
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh replace-control-plane
+
+      - name: Restore and verify Radius state
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh restore-state
+
+      - name: Update and verify existing workload
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh update-workload
+
+      - name: Collect failure diagnostics
+        if: failure()
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh diagnostics
 
       - name: Upload failure diagnostics
         if: failure()
@@ -100,3 +137,7 @@ jobs:
           path: dist/repo-radius-state-e2e/
           if-no-files-found: ignore
           retention-days: 3
+
+      - name: Clean up state version and clusters
+        if: always()
+        run: bash ./.github/scripts/test-repo-radius-state-e2e.sh cleanup
