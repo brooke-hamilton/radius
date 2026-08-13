@@ -48,7 +48,7 @@ jobs:
       RELNOTE_FOUND: false
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -100,7 +100,7 @@ jobs:
           INPUT_RELEASE_VERSION: ${{ steps.get-version.outputs.release-version }}
           INPUT_PREVIOUS_TAG: ${{ steps.latest-release-tag.outputs.result }}
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           header: relnote-${{ github.run_id }}
           number: ${{ github.event.pull_request.number }}
@@ -125,7 +125,7 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.get-version.outputs.release-version }}
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         continue-on-error: true
         if: ${{ !contains(steps.get-version.outputs.release-version, '-rc') && env.RELNOTE_FOUND == 'false' }}
         with:
@@ -178,14 +178,14 @@ jobs:
             dashboard
             bicep-types-aws
 
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: radius-project/radius
           ref: main
           persist-credentials: false
 
       - name: Checkout radius-project/radius@main
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: radius-project/radius
           ref: main
@@ -194,7 +194,7 @@ jobs:
           persist-credentials: true
 
       - name: Checkout radius-project/recipes@main
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: radius-project/recipes
           ref: main
@@ -203,7 +203,7 @@ jobs:
           persist-credentials: true
 
       - name: Checkout radius-project/dashboard@main
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: radius-project/dashboard
           ref: main
@@ -212,7 +212,7 @@ jobs:
           persist-credentials: true
 
       - name: Checkout radius-project/bicep-types-aws@main
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: radius-project/bicep-types-aws
           ref: main
