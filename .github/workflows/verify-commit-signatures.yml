@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://www.schemastore.org/github-workflow.json
+---
+name: Verify Commit Signatures
+
+on:
+  # This workflow uses the trusted base commit and never executes PR-head code.
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to verify
+        required: true
+        type: number
+
+concurrency:
+  group: verify-commit-signatures-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  verify-commit-signatures:
+    name: Verify Commit Signatures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout signature verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          sparse-checkout: |
+            .github/scripts/verify-commit-signatures.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Verify commit signatures
+        id: verify
+        run: |
+          unverified_commits="$(./.github/scripts/verify-commit-signatures.sh)"
+          printf 'unverified_commits=%s\n' "${unverified_commits}" >> "${GITHUB_OUTPUT}"
+          printf 'count=%s\n' "$(jq 'length' <<< "${unverified_commits}")" >> "${GITHUB_OUTPUT}"
+
+      - name: Prepare signature guidance
+        if: steps.verify.outputs.count != '0'
+        env:
+          UNVERIFIED_COMMITS: ${{ steps.verify.outputs.unverified_commits }}
+          UNVERIFIED_COUNT: ${{ steps.verify.outputs.count }}
+        run: |
+          pr_author="$(
+            gh api "/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
+              --jq '.user.login'
+          )"
+          guide_path="docs/contributing/contributing-code"
+          guide_path+="/contributing-code-first-commit"
+          guide_path+="/first-commit-06-creating-a-pr/index.md"
+          guide_url="${GITHUB_SERVER_URL}/radius-project/radius/blob/main"
+          guide_url+="/${guide_path}#signing-your-commits"
+
+          {
+            printf 'Hi @%s, thank you for contributing to Radius.\n\n' "${pr_author}"
+            echo "The following commits do not currently show a GitHub **Verified** signature:"
+            echo
+            jq -r \
+              --arg origin "${GITHUB_SERVER_URL}" \
+              --arg repo "${GITHUB_REPOSITORY}" \
+              '.[] | "- [`\(.[:7])`](\($origin)/\($repo)/commit/\(.))"' \
+              <<< "${UNVERIFIED_COMMITS}"
+            echo
+            printf '%s%s%s\n' \
+              "Please follow our [commit-signing guide](${guide_url}) to " \
+              "configure GPG, SSH, or S/MIME signing. Then re-sign the affected " \
+              "commits and force-push the rewritten branch with \`--force-with-lease\`."
+            echo
+            printf '%s%s\n' \
+              "Cryptographic commit signing is separate from the DCO " \
+              "\`Signed-off-by\` line; both are required."
+          } > commit-signature-guidance.md
+
+          printf '%s%s%s\n' \
+            "::warning title=Unverified commit signatures::" \
+            "${UNVERIFIED_COUNT}" \
+            " commit(s) do not show a Verified signature."
+
+      - name: Post signature guidance
+        if: steps.verify.outputs.count != '0'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: commit-signature-verification
+          number_force: ${{ github.event.pull_request.number || inputs.pr_number }}
+          path: commit-signature-guidance.md
+          skip_unchanged: true
+
+      - name: Remove resolved signature guidance
+        if: steps.verify.outputs.count == '0'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: commit-signature-verification
+          number_force: ${{ github.event.pull_request.number || inputs.pr_number }}
+          delete: true
