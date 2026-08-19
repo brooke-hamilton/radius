@@ -17,7 +17,6 @@ limitations under the License.
 package gateway
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -30,7 +29,6 @@ import (
 	rpv1 "github.com/radius-project/radius/pkg/rp/v1"
 	"github.com/radius-project/radius/pkg/ucp/resources"
 	resources_kubernetes "github.com/radius-project/radius/pkg/ucp/resources/kubernetes"
-	"github.com/radius-project/radius/test/testcontext"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -105,7 +103,7 @@ func Test_GetDependencyIDs_Success(t *testing.T) {
 	}
 	resource := makeResource(properties)
 
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	renderer := Renderer{}
 	radiusResourceIDs, resourceIDs, err := renderer.GetDependencyIDs(ctx, resource)
 	require.NoError(t, err)
@@ -131,7 +129,7 @@ func Test_Render_WithIPAndNoHostname(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -166,7 +164,7 @@ func Test_Render_WithIPAndPrefix(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -202,7 +200,7 @@ func Test_Render_WithIPAndFQHostname(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -237,7 +235,7 @@ func Test_Render_WithFQHostname_OverridesPrefix(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -265,7 +263,7 @@ func Test_Render_PublicEndpointOverride(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(testHostname, "", testPort, true, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -298,7 +296,7 @@ func Test_Render_PublicEndpointOverride_OverridesAll(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(expectedPublicEndpoint, testExternalIP, "", true, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -328,7 +326,7 @@ func Test_Render_PublicEndpointOverride_WithEmptyIP(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(expectedFQDN, "", "", true, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -358,7 +356,7 @@ func Test_Render_LocalhostPublicEndpointOverride(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(expectedFQDN, "", testPort, true, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -387,7 +385,7 @@ func Test_Render_Hostname(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(testHostname, "", "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -417,7 +415,7 @@ func Test_Render_Hostname_WithPort(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(expectedFQDN, "", "32434", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -451,7 +449,7 @@ func Test_Render_Hostname_WithPrefix(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(testHostname, "", "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -485,7 +483,7 @@ func Test_Render_Hostname_WithPrefixAndPort(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions(testHostname, "", testPort, false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -516,7 +514,7 @@ func Test_Render_WithMissingPublicIP(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", "", "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -555,7 +553,7 @@ func Test_Render_Fails_SSLPassthroughWithRoutePath(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.Error(t, err)
 	require.Equal(t, err.(*v1.ErrClientRP).Code, v1.CodeInvalid)
 	require.Equal(t, err.(*v1.ErrClientRP).Message, "cannot support `path` or `replacePrefix` in routes with sslPassthrough set to true")
@@ -592,7 +590,7 @@ func Test_Render_Fails_SSLPassthroughWithMultipleRoutes(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.Error(t, err)
 	require.Equal(t, err.(*v1.ErrClientRP).Code, v1.CodeInvalid)
 	require.Equal(t, err.(*v1.ErrClientRP).Message, "cannot support multiple routes with sslPassthrough set to true")
@@ -627,7 +625,7 @@ func Test_Render_WithTimeoutPolicy(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -686,7 +684,7 @@ func Test_Render_WithUnsetBackendRequestTimeoutPolicy(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -744,7 +742,7 @@ func Test_Render_WithInvalidTimeoutPolicy(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.Error(t, err)
 	require.Equal(t, err.(*v1.ErrClientRP).Code, v1.CodeInvalid)
 	require.Equal(t, err.(*v1.ErrClientRP).Message, "request timeout must be greater than or equal to backend request timeout")
@@ -765,7 +763,7 @@ func Test_Render_Fails_WithNoRoute(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.Error(t, err)
 	require.Equal(t, err.(*v1.ErrClientRP).Code, v1.CodeInvalid)
 	require.Equal(t, err.(*v1.ErrClientRP).Message, "must have at least one route when declaring a Gateway resource")
@@ -790,7 +788,7 @@ func Test_Render_FQDNOverride(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -819,7 +817,7 @@ func Test_Render_Fails_WithoutFQHostnameOrPrefix(t *testing.T) {
 	dependencies := map[string]renderers.RendererDependency{}
 	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.Error(t, err)
 	require.Equal(t, "getting hostname failed with error: must provide either prefix or fullyQualifiedHostname if hostname is specified", err.Error())
 	require.Len(t, output.Resources, 0)
@@ -849,7 +847,7 @@ func Test_Render_Single_Route(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -902,7 +900,7 @@ func TestRender_SingleRoute_EnableWebsockets(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -956,7 +954,7 @@ func Test_Render_SSLPassthrough(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "https://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -1030,7 +1028,7 @@ func Test_Render_Multiple_Routes(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 3)
 	require.Empty(t, output.SecretValues)
@@ -1070,6 +1068,57 @@ func Test_Render_Multiple_Routes(t *testing.T) {
 	validateContourHTTPRoute(t, output.Resources, "B", expectedHTTPRouteSpecB, "")
 }
 
+func Test_Render_MultipleRoutes_OrderOutputResourcesDeploysRouteChildrenBeforeRoot(t *testing.T) {
+	r := &Renderer{}
+
+	routes := []datamodel.GatewayRoute{
+		{
+			Destination: "http://A",
+			Path:        "/",
+		},
+		{
+			Destination: "http://B",
+			Path:        "/agent",
+		},
+	}
+	properties := datamodel.GatewayProperties{
+		BasicResourceProperties: rpv1.BasicResourceProperties{
+			Application: "/subscriptions/test-sub-id/resourceGroups/test-rg/providers/Applications.Core/applications/test-application",
+		},
+		Routes: routes,
+	}
+	resource := makeResource(properties)
+	environmentOptions := getEnvironmentOptions("", testExternalIP, "", false, false)
+
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Environment: environmentOptions})
+	require.NoError(t, err)
+
+	rootHTTPProxy, rootOutputResource := kubernetes.FindContourHTTPProxy(output.Resources)
+	require.NotNil(t, rootHTTPProxy)
+	require.NotNil(t, rootOutputResource.CreateResource)
+	expectedRouteLocalIDs := []string{
+		fmt.Sprintf("%s-%s", rpv1.LocalIDHttpProxy, "A"),
+		fmt.Sprintf("%s-%s", rpv1.LocalIDHttpProxy, "B"),
+	}
+	require.ElementsMatch(t, expectedRouteLocalIDs, rootOutputResource.CreateResource.Dependencies)
+
+	orderedResources, err := rpv1.OrderOutputResources(output.Resources)
+	require.NoError(t, err)
+
+	orderedIndexes := map[string]int{}
+	for i, resource := range orderedResources {
+		orderedIndexes[resource.LocalID] = i
+	}
+
+	rootIndex, ok := orderedIndexes[rpv1.LocalIDGateway]
+	require.True(t, ok)
+	for _, localID := range expectedRouteLocalIDs {
+		routeIndex, ok := orderedIndexes[localID]
+		require.True(t, ok)
+		require.Less(t, routeIndex, rootIndex)
+	}
+}
+
 func Test_Render_Route_WithPrefixRewrite(t *testing.T) {
 	r := &Renderer{}
 
@@ -1094,7 +1143,7 @@ func Test_Render_Route_WithPrefixRewrite(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -1178,7 +1227,7 @@ func Test_Render_Route_WithMultiplePrefixRewrite(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 3)
 	require.Empty(t, output.SecretValues)
@@ -1292,7 +1341,7 @@ func Test_Render_WithDependencies(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "https://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -1347,7 +1396,7 @@ func Test_Render_WithEnvironment_KubernetesMetadata(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -1400,7 +1449,7 @@ func Test_Render_WithEnvironmentApplication_KubernetesMetadata(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions, Application: applicationOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions, Application: applicationOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -1457,7 +1506,7 @@ func Test_RenderDNS_WithEnvironmentApplication_KubernetesMetadata(t *testing.T) 
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions, Application: applicationOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions, Application: applicationOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -1510,7 +1559,7 @@ func Test_RenderDNS_WithEnvironment_KubernetesMetadata(t *testing.T) {
 	expectedHostname := fmt.Sprintf("%s.%s.%s.nip.io", resourceName, applicationName, testExternalIP)
 	expectedURL := "http://" + expectedHostname
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)
@@ -1582,7 +1631,7 @@ func Test_Render_With_TLSTermination(t *testing.T) {
 		},
 	}
 
-	output, err := r.Render(context.Background(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
+	output, err := r.Render(t.Context(), resource, renderers.RenderOptions{Dependencies: dependencies, Environment: environmentOptions})
 	require.NoError(t, err)
 	require.Len(t, output.Resources, 2)
 	require.Empty(t, output.SecretValues)

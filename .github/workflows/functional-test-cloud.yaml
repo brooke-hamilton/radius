@@ -64,8 +64,16 @@ env:
   CONTAINER_REGISTRY: ${{ vars.FUNCTIONAL_TEST_CONTAINER_REGISTRY }}
   # Container registry for storing Bicep recipe artifacts
   BICEP_RECIPE_REGISTRY: ${{ vars.FUNCTIONAL_TEST_BICEP_RECIPE_REGISTRY }}
-  # The radius functional test timeout
-  FUNCTIONALTEST_TIMEOUT: 60m
+  # The radius functional test timeout. This bounds `go test` and must stay
+  # comfortably below the job's timeout-minutes: the job also pays for ~10
+  # minutes of setup (KinD cluster, Radius install, Helm charts, cloud logins)
+  # before the tests start, and must still have time afterwards to collect
+  # cluster diagnostics and upload artifacts. If `go test` is allowed to run to
+  # the job timeout, GitHub cancels the job mid-test and the post-test steps -
+  # including diagnostics collection - never run, which is exactly the evidence
+  # needed to debug a hang. The cloud legs normally spend about 5 minutes in
+  # `go test`, so this leaves a wide margin.
+  FUNCTIONALTEST_TIMEOUT: 30m
   # The Azure Location to store test resources
   AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
   # The base directory for storing test logs
@@ -285,7 +293,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           allow-unsafe-pr-checkout: true
@@ -374,7 +382,7 @@ jobs:
           permission-pull-requests: write
 
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.CHECKOUT_REPO }}
           ref: ${{ env.CHECKOUT_REF }}
@@ -382,13 +390,14 @@ jobs:
           allow-unsafe-pr-checkout: true
 
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-          cache: true
+          # Produces artifacts/images — don't restore a cache a prior run could have poisoned.
+          cache: false
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -427,13 +436,13 @@ jobs:
             ## Test Status
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -458,7 +467,7 @@ jobs:
           path: |
             ./dist/linux_amd64/release/rad
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: success() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -469,7 +478,7 @@ jobs:
           message: |
             :white_check_mark: Container images build succeeded
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: failure() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -480,7 +489,7 @@ jobs:
           message: |
             :x: Container images build failed
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -492,7 +501,7 @@ jobs:
             :hourglass: Publishing Bicep Recipes for functional tests...
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
@@ -507,12 +516,12 @@ jobs:
           make generate-bicep-types VERSION="${BICEP_TYPES_VERSION}"
 
       - name: Install bicep CLI
-        # Pinned version + checksum live in build/tools.mk (previously installed
+        # Pinned version + checksum live in build/tools.yaml (previously installed
         # the unpinned 'latest', which could pull v0.43+).
         run: make install-bicep
 
       - name: Login to Azure (for private test bicep-types ACR)
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ secrets.AZURE_SP_TESTS_APPID }}
           tenant-id: ${{ secrets.AZURE_SP_TESTS_TENANTID }}
@@ -554,7 +563,7 @@ jobs:
           BICEP_RECIPE_REGISTRY: ${{ env.BICEP_RECIPE_REGISTRY }}
           BICEP_RECIPE_TAG_VERSION: ${{ env.REL_VERSION }}
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: success() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -565,7 +574,7 @@ jobs:
           message: |
             :white_check_mark: Recipe publishing succeeded
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: failure() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -674,7 +683,7 @@ jobs:
           details_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Checkout Radius repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.CHECKOUT_REPO }}
           ref: ${{ env.CHECKOUT_REF }}
@@ -682,7 +691,7 @@ jobs:
           allow-unsafe-pr-checkout: true
 
       - name: Checkout Samples repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: matrix.name == 'samples'
         with:
           repository: radius-project/samples
@@ -692,11 +701,12 @@ jobs:
           allow-unsafe-pr-checkout: true
 
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-          cache: true
+          # Publishes recipes/types — don't restore a cache a prior run could have poisoned.
+          cache: false
 
       - name: Download rad CLI
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -715,13 +725,13 @@ jobs:
           ./bin/rad version >/dev/null 2>&1 || { echo "Downloaded rad binary is not a working rad CLI executable"; exit 1; }
 
       - name: Login to Azure
-        uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ secrets.AZURE_SP_TESTS_APPID }}
           tenant-id: ${{ secrets.AZURE_SP_TESTS_TENANTID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }}
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         continue-on-error: true
         with:
           GITHUB_TOKEN: ${{ steps.get_installation_token.outputs.token }}
@@ -745,20 +755,20 @@ jobs:
           AZURE_SUBSCRIPTIONID_TESTS: ${{ secrets.AZURE_SUBSCRIPTIONID_TESTS }}
 
       - name: Install helm
-        # Version pinned in build/tools.mk (HELM_VERSION).
+        # Version pinned in build/tools.yaml (HELM_VERSION).
         run: make install-helm
 
       # The role-to-assume is the role that the github action will assume to execute aws commands and
       # construct cloud control client in test code.
       - name: configure aws credentials using assumed role
-        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
         with:
           role-to-assume: ${{ secrets.AWS_GH_ACTIONS_ROLE }}
-          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          role-session-name: ${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Install KinD
-        # Installs the version pinned in build/tools.mk (KIND_VERSION) and adds
+        # Installs the version pinned in build/tools.yaml (KIND_VERSION) and adds
         # the install dir to the job PATH for the cluster-create step below.
         run: make install-kind
 
@@ -829,7 +839,7 @@ jobs:
           helm install workload-identity-webhook azure-workload-identity/workload-identity-webhook --namespace radius-default --create-namespace --version "${AZURE_WORKLOAD_IDENTITY_WEBHOOK_VER}" --set "azureTenantID=${AZURE_SP_TESTS_TENANTID}"
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -842,7 +852,7 @@ jobs:
           rad bicep download
           rad version
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: failure() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -892,7 +902,7 @@ jobs:
             exit 1
           fi
 
-          # Poll logs for up to  iterations, 30 seconds each (upto 3 minutes total)
+          # Poll logs for up to  iterations, 30 seconds each (up to 3 minutes total)
           for i in {1..6}; do
             kubectl logs "$POD_NAME" -n radius-system | tee registermanifest_logs.txt > /dev/null
 
@@ -941,7 +951,7 @@ jobs:
           rad credential register aws irsa \
             --iam-role "${FUNC_TEST_RAD_IRSA_ROLE}"
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: failure() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -981,6 +991,12 @@ jobs:
           # Restore AWS Bicep types
           bicep restore ./test/functional-portable/corerp/cloud/resources/testdata/aws-logs-loggroup.bicep --force
       - name: Run functional tests
+        # A step-level timeout, unlike the job-level one, still lets the
+        # `if: always()` steps below run - so a hung suite is followed by
+        # diagnostics collection rather than a cancelled job. Kept above
+        # FUNCTIONALTEST_TIMEOUT so `go test` times out first and prints its
+        # goroutine dump. Mirrors the pattern in long-running-azure.yaml.
+        timeout-minutes: 35
         run: |
           set -euo pipefail
 
@@ -1049,23 +1065,20 @@ jobs:
           result_directory: dist/functional_test/
           comment_mode: failures
 
-      - name: Collect Pod details
+      - name: Collect cluster diagnostics
         if: always()
-        # Diagnostic-only snapshot of cluster-wide pod state for post-mortem. A
-        # `kubectl describe pods -A` can race pod teardown and return a transient
-        # NotFound, so never let it fail the job.
+        # Diagnostic-only post-mortem snapshot. The script records each command's
+        # failure inline and keeps going, because the failures worth debugging are
+        # usually the ones where the control plane is unreachable and every
+        # kubectl call fails. Never let it fail the job.
         continue-on-error: true
         env:
-          MATRIX_NAME: ${{ matrix.name }}
-        run: |
-          POD_STATE_LOG_FILENAME="${RADIUS_CONTAINER_LOG_BASE}/${MATRIX_NAME}-tests-pod-states.log"
-          mkdir -p "$(dirname "${POD_STATE_LOG_FILENAME}")"
-          {
-            echo "kubectl get pods -A"
-            kubectl get pods -A
-            echo "kubectl describe pods -A"
-            kubectl describe pods -A
-          } >> "${POD_STATE_LOG_FILENAME}"
+          RADIUS_CONTAINER_LOG_PATH: ${{ github.workspace }}/${{ env.RADIUS_CONTAINER_LOG_BASE }}
+          DIAGNOSTICS_NAME: ${{ matrix.name }}
+          # kube-apiserver/etcd/kubelet logs are only worth the artifact size when
+          # something went wrong. An empty name skips the export.
+          KIND_CLUSTER_NAME: ${{ job.status != 'success' && 'radius' || '' }}
+        run: ./.github/scripts/collect-cluster-diagnostics.sh
 
       - name: Upload container logs
         if: always()
@@ -1098,7 +1111,7 @@ jobs:
           path: recipes/pod-logs
           if-no-files-found: error
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: success() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -1109,7 +1122,7 @@ jobs:
           message: |
             :white_check_mark: ${{ matrix.name }} functional tests succeeded
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: failure() && env.PR_NUMBER != ''
         continue-on-error: true
         with:
@@ -1120,7 +1133,7 @@ jobs:
           message: |
             :x: ${{ matrix.name }} functional test failed. Please check [the logs](${{ env.ACTION_LINK }}) for more details
 
-      - uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         if: cancelled() && env.PR_NUMBER != ''
         continue-on-error: true
         with:

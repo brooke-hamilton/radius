@@ -111,6 +111,7 @@ import (
 	"github.com/radius-project/radius/pkg/cli/output"
 	"github.com/radius-project/radius/pkg/cli/prompt"
 	"github.com/radius-project/radius/pkg/graph/persistence/git"
+	"github.com/radius-project/radius/pkg/statearchive/factory"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -257,7 +258,9 @@ func init() {
 }
 
 func initSubCommands() {
-	graphStore, err := git.NewStore(git.Options{})
+	graphStore, err := git.NewStore(git.Options{
+		Archive: factory.NewGraphArchive(os.Getenv(factory.GraphRegistryEnvVar)),
+	})
 	if err != nil {
 		// graphStore is required only when we are in repo radius
 		// it can be nil otherwise.
@@ -369,10 +372,10 @@ func initSubCommands() {
 	shutdownCmd, _ := cmd_shutdown.NewCommand(framework)
 	RootCmd.AddCommand(shutdownCmd)
 
-	envCreateCmd, _ := env_create.NewCommand(framework)
+	legacyEnvCreateCmd, _ := env_create.NewCommand(framework)
 	previewCreateCmd, _ := env_create_preview.NewCommand(framework)
-	wirePreviewSubcommand(envCreateCmd, previewCreateCmd)
-	envCmd.AddCommand(envCreateCmd)
+	wirePreviewSubcommandPreviewBase(previewCreateCmd, legacyEnvCreateCmd.RunE, "Use the Radius.Core preview implementation for environment create", "recipe-packs")
+	envCmd.AddCommand(previewCreateCmd)
 
 	envDeleteCmd, _ := env_delete.NewCommand(framework)
 	previewDeleteCmd, _ := env_delete_preview.NewCommand(framework)
@@ -391,20 +394,8 @@ func initSubCommands() {
 
 	legacyEnvUpdateCmd, _ := env_update.NewCommand(framework)
 	previewEnvUpdateCmd, _ := env_update_preview.NewCommand(framework)
-	envUpdateCmd := previewEnvUpdateCmd
-	envUpdateCmd.Flags().Bool("preview", false, "Use the Radius.Core preview implementation for environment update.")
-	previewRunE := envUpdateCmd.RunE
-	envUpdateCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		usePreview, err := cmd.Flags().GetBool("preview")
-		if err != nil {
-			return err
-		}
-		if usePreview {
-			return previewRunE(cmd, args)
-		}
-		return legacyEnvUpdateCmd.RunE(cmd, args)
-	}
-	envCmd.AddCommand(envUpdateCmd)
+	wirePreviewSubcommandPreviewBase(previewEnvUpdateCmd, legacyEnvUpdateCmd.RunE, "Use the Radius.Core preview implementation for environment update", "recipe-packs", "clear-kubernetes")
+	envCmd.AddCommand(previewEnvUpdateCmd)
 
 	workspaceCreateCmd, _ := workspace_create.NewCommand(framework)
 	previewWorkspaceCreateCmd, _ := workspace_create_preview.NewCommand(framework)
@@ -529,22 +520,88 @@ func getRootSpanName() string {
 // The preview behavior can also be activated by setting the RADIUS_PREVIEW environment variable to "true" (case-insensitive).
 // The --preview flag takes precedence over the environment variable.
 func wirePreviewSubcommand(cmd *cobra.Command, previewCmd *cobra.Command) {
-	cmd.Flags().Bool("preview", false, "Use the Radius.Core preview implementation (can also be set via RADIUS_PREVIEW=true)")
+	cmd.Flags().Bool("preview", false, withPreviewEnvVarNote("Use the Radius.Core preview implementation"))
 
 	legacyRun := cmd.RunE
 	previewRun := previewCmd.RunE
 
 	cmd.RunE = func(c *cobra.Command, args []string) error {
-		usePreview, err := c.Flags().GetBool("preview")
+		usePreview, err := resolveUsePreview(c)
 		if err != nil {
 			return err
-		}
-		if !c.Flags().Changed("preview") {
-			usePreview = strings.EqualFold(os.Getenv("RADIUS_PREVIEW"), "true")
 		}
 		if usePreview {
 			return previewRun(c, args)
 		}
 		return legacyRun(c, args)
 	}
+}
+
+// wirePreviewSubcommandPreviewBase wires a subcommand whose preview implementation carries
+// flags that the legacy implementation lacks (e.g. env update's --recipe-packs), so the
+// preview command must be used as the base to expose those flags. The legacy runner is
+// invoked as a fallback. Like wirePreviewSubcommand, preview is activated by the --preview
+// flag or the RADIUS_PREVIEW environment variable, with the flag taking precedence.
+//
+// previewOnlyFlags names flags that only the preview implementation understands. When preview
+// mode is not active, setting any of them is rejected instead of silently routing to the legacy
+// runner (which would ignore them).
+func wirePreviewSubcommandPreviewBase(previewCmd *cobra.Command, legacyRunE func(*cobra.Command, []string) error, previewFlagUsage string, previewOnlyFlags ...string) {
+	previewCmd.Flags().Bool("preview", false, withPreviewEnvVarNote(previewFlagUsage))
+
+	// Fail loudly at wiring time if a preview-only flag name does not match a real flag.
+	// Otherwise Changed() would silently return false and the guard below would never fire,
+	// reintroducing the silent fall-through to the legacy runner this guard prevents.
+	for _, name := range previewOnlyFlags {
+		if previewCmd.Flags().Lookup(name) == nil {
+			panic(fmt.Sprintf("wirePreviewSubcommandPreviewBase: preview-only flag %q is not defined on command %q", name, previewCmd.Name()))
+		}
+	}
+
+	previewRun := previewCmd.RunE
+
+	previewCmd.RunE = func(c *cobra.Command, args []string) error {
+		usePreview, err := resolveUsePreview(c)
+		if err != nil {
+			return err
+		}
+		if usePreview {
+			return previewRun(c, args)
+		}
+		for _, name := range previewOnlyFlags {
+			if c.Flags().Changed(name) {
+				return clierrors.Message("The --%s flag requires preview mode. Re-run with --preview or set RADIUS_PREVIEW=true.", name)
+			}
+		}
+		return legacyRunE(c, args)
+	}
+}
+
+// resolveUsePreview reports whether a command should use its preview implementation.
+// It returns true when the --preview flag is explicitly set to true, or when the flag is
+// unset and the RADIUS_PREVIEW environment variable is "true" (case-insensitive). The
+// --preview flag takes precedence over the environment variable.
+func resolveUsePreview(cmd *cobra.Command) (bool, error) {
+	usePreview, err := cmd.Flags().GetBool("preview")
+	if err != nil {
+		return false, err
+	}
+	if !cmd.Flags().Changed("preview") {
+		usePreview = strings.EqualFold(os.Getenv("RADIUS_PREVIEW"), "true")
+	}
+	return usePreview, nil
+}
+
+// previewEnvVarNote documents that the RADIUS_PREVIEW environment variable also activates
+// preview mode. It is appended to --preview flag usage strings by withPreviewEnvVarNote.
+const previewEnvVarNote = "can also be set via RADIUS_PREVIEW=true"
+
+// withPreviewEnvVarNote ensures a --preview flag usage string mentions that RADIUS_PREVIEW
+// also activates preview, so --help stays accurate. The note is appended unless the usage
+// already references RADIUS_PREVIEW, avoiding a double-append when a caller includes it.
+func withPreviewEnvVarNote(usage string) string {
+	if strings.Contains(usage, "RADIUS_PREVIEW") {
+		return usage
+	}
+	return usage + " (" + previewEnvVarNote + ")"
 }

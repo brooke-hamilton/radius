@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	v1 "github.com/radius-project/radius/pkg/armrpc/api/v1"
+	"github.com/radius-project/radius/pkg/defaults"
 	"github.com/radius-project/radius/pkg/to"
 	"github.com/radius-project/radius/pkg/ucp/datamodel"
 )
@@ -71,6 +72,15 @@ func (src *ResourceTypeResource) ConvertTo() (v1.DataModelInterface, error) {
 		}
 		sum := sha256.Sum256(iconBytes)
 		dst.Properties.IconHash = to.Ptr(hex.EncodeToString(sum[:]))
+	} else {
+		// No icon supplied — substitute the product default icon's hash so
+		// every registered type has a non-nil IconHash. The bytes stay unset
+		// on the record; consumers fetch them from the embedded product
+		// default in-binary (pkg/defaults package). If the embedded default
+		// failed to load, DefaultIconHash returns nil and IconHash stays
+		// unset — icons are cosmetic, we degrade gracefully rather than
+		// fail registration.
+		dst.Properties.IconHash = defaults.DefaultIconHash()
 	}
 
 	return dst, nil

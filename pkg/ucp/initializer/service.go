@@ -30,6 +30,7 @@ import (
 	"github.com/radius-project/radius/pkg/cli/manifest"
 	"github.com/radius-project/radius/pkg/components/database"
 	"github.com/radius-project/radius/pkg/components/hosting"
+	"github.com/radius-project/radius/pkg/defaults"
 	"github.com/radius-project/radius/pkg/to"
 	"github.com/radius-project/radius/pkg/ucp"
 	"github.com/radius-project/radius/pkg/ucp/datamodel"
@@ -214,14 +215,16 @@ func registerResourceProviderDirect(ctx context.Context, dbClient database.Clien
 	for typeName, resourceType := range rp.Types {
 		typeID := rpID + "/resourceTypes/" + typeName
 
-		// If the manifest brought in an icon via a sibling <basename>.svg
-		// file (see loadSiblingIcon), compute its SHA-256 hash server-side so
-		// the wire model always publishes the hash of exactly the bytes we
-		// stored (FR-010).
 		var iconHash *string
 		if resourceType.Icon != nil {
 			sum := sha256.Sum256([]byte(*resourceType.Icon))
 			iconHash = to.Ptr(hex.EncodeToString(sum[:]))
+		} else {
+			// Substitute the product default icon's hash so every type in the
+			// registry has a non-nil iconHash.  DefaultIconHash returns nil
+			// when the embedded default failed to load — Icons are cosmetic,
+			// so we leave iconHash unset rather than fail registration.
+			iconHash = defaults.DefaultIconHash()
 		}
 
 		typeModel := &datamodel.ResourceType{

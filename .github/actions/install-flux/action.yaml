@@ -11,11 +11,13 @@ runs:
   using: composite
   steps:
     - name: Install Flux CLI
-      uses: fluxcd/flux2/action@dcc7def046cba2fe8d15d9737a4c250100f62fe0 # v2.9.0
+      uses: fluxcd/flux2/action@889be9d6cc8afa8ed639e1e1ba4ab678e3b38d8c # v2.9.4
       with:
         version: ${{ inputs.version }}
 
     - name: Install Flux Source Controller
       shell: bash
       run: |
-        .github/actions/install-flux/install-flux.sh ${{ inputs.version }}
+        .github/actions/install-flux/install-flux.sh "${INPUT_VERSION}"
+      env:
+        INPUT_VERSION: ${{ inputs.version }}

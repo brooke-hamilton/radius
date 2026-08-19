@@ -17,7 +17,6 @@ limitations under the License.
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +33,6 @@ import (
 	"github.com/radius-project/radius/pkg/recipes/recipecontext"
 	"github.com/radius-project/radius/pkg/recipes/terraform/config/backends"
 	"github.com/radius-project/radius/pkg/recipes/terraform/config/providers"
-	"github.com/radius-project/radius/test/testcontext"
 )
 
 const (
@@ -181,11 +179,11 @@ func Test_NewConfig(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			workingDir := t.TempDir()
 
-			tfconfig, err := New(context.Background(), testRecipeName, tc.envdef, tc.metadata)
+			tfconfig, err := New(t.Context(), testRecipeName, tc.envdef, tc.metadata)
 			require.NoError(t, err)
 
 			// validate generated config
-			err = tfconfig.Save(testcontext.New(t), workingDir)
+			err = tfconfig.Save(t.Context(), workingDir)
 			require.NoError(t, err)
 
 			actualConfig, err := os.ReadFile(getMainConfigFilePath(workingDir))
@@ -274,10 +272,10 @@ func Test_AddRecipeContext(t *testing.T) {
 
 	for _, tc := range configTests {
 		t.Run(tc.desc, func(t *testing.T) {
-			ctx := testcontext.New(t)
+			ctx := t.Context()
 			workingDir := t.TempDir()
 
-			tfconfig, err := New(context.Background(), testRecipeName, tc.envdef, tc.metadata)
+			tfconfig, err := New(t.Context(), testRecipeName, tc.envdef, tc.metadata)
 			require.NoError(t, err)
 			err = tfconfig.AddRecipeContext(ctx, tc.moduleName, tc.recipeContext)
 			if tc.err == "" {
@@ -580,7 +578,7 @@ func Test_AddProviders(t *testing.T) {
 
 	for _, tc := range configTests {
 		t.Run(tc.desc, func(t *testing.T) {
-			ctx := testcontext.New(t)
+			ctx := t.Context()
 			workingDir := t.TempDir()
 
 			tfconfig, err := New(ctx, testRecipeName, &envRecipe, &resourceRecipe)
@@ -670,7 +668,7 @@ func Test_AddOutputs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			tfconfig, err := New(context.Background(), testRecipeName, &envRecipe, &resourceRecipe)
+			tfconfig, err := New(t.Context(), testRecipeName, &envRecipe, &resourceRecipe)
 			require.NoError(t, err)
 
 			err = tfconfig.AddOutputs(tc.moduleName)
@@ -683,7 +681,7 @@ func Test_AddOutputs(t *testing.T) {
 			}
 
 			workingDir := t.TempDir()
-			err = tfconfig.Save(testcontext.New(t), workingDir)
+			err = tfconfig.Save(t.Context(), workingDir)
 			require.NoError(t, err)
 
 			// Assert generated config file matches expected config in JSON format.
@@ -706,6 +704,7 @@ func Test_AddMappedOutputs(t *testing.T) {
 		moduleName     string
 		outputsMap     map[string]string
 		sensitivity    map[string]bool
+		forceSensitive bool
 		expectedOutput map[string]any
 		expectedErr    bool
 	}{
@@ -727,6 +726,22 @@ func Test_AddMappedOutputs(t *testing.T) {
 				},
 				"secret": map[string]any{
 					"value":     "${module." + testRecipeName + ".secret}",
+					"sensitive": true,
+				},
+			},
+		},
+		{
+			desc:       "forceSensitive marks a non-sensitive module output sensitive",
+			moduleName: testRecipeName,
+			outputsMap: map[string]string{
+				"connectionString": "primaryConnectionString",
+			},
+			// The module did not mark this output sensitive (mirrors AVM primaryConnectionString).
+			sensitivity:    map[string]bool{"primaryConnectionString": false},
+			forceSensitive: true,
+			expectedOutput: map[string]any{
+				"primaryConnectionString": map[string]any{
+					"value":     "${module." + testRecipeName + ".primaryConnectionString}",
 					"sensitive": true,
 				},
 			},
@@ -768,10 +783,10 @@ func Test_AddMappedOutputs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			tfconfig, err := New(context.Background(), testRecipeName, &envRecipe, &resourceRecipe)
+			tfconfig, err := New(t.Context(), testRecipeName, &envRecipe, &resourceRecipe)
 			require.NoError(t, err)
 
-			err = tfconfig.AddMappedOutputs(tc.moduleName, tc.outputsMap, tc.sensitivity)
+			err = tfconfig.AddMappedOutputs(tc.moduleName, tc.outputsMap, tc.sensitivity, tc.forceSensitive)
 			if tc.expectedErr {
 				require.Error(t, err)
 				return
@@ -827,7 +842,7 @@ func Test_AddAllOutputs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {
-			tfconfig, err := New(context.Background(), testRecipeName, &envRecipe, &resourceRecipe)
+			tfconfig, err := New(t.Context(), testRecipeName, &envRecipe, &resourceRecipe)
 			require.NoError(t, err)
 
 			err = tfconfig.AddAllOutputs(tc.moduleName, tc.sensitivity)
@@ -1067,7 +1082,7 @@ func Test_updateModuleWithProviderAliases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := testcontext.New(t)
+			ctx := t.Context()
 			err := tt.cfg.updateModuleWithProviderAliases(tt.requiredProviders)
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1093,10 +1108,10 @@ func Test_updateModuleWithProviderAliases(t *testing.T) {
 }
 
 func Test_Save_overwrite(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	testDir := t.TempDir()
 	envRecipe, resourceRecipe := getTestInputs()
-	tfconfig, err := New(context.Background(), testRecipeName, &envRecipe, &resourceRecipe)
+	tfconfig, err := New(t.Context(), testRecipeName, &envRecipe, &resourceRecipe)
 	require.NoError(t, err)
 
 	err = tfconfig.Save(ctx, testDir)
@@ -1109,7 +1124,7 @@ func Test_Save_overwrite(t *testing.T) {
 func Test_Save_ConfigFileReadOnly(t *testing.T) {
 	testDir := t.TempDir()
 	envRecipe, resourceRecipe := getTestInputs()
-	tfconfig, err := New(context.Background(), testRecipeName, &envRecipe, &resourceRecipe)
+	tfconfig, err := New(t.Context(), testRecipeName, &envRecipe, &resourceRecipe)
 	require.NoError(t, err)
 
 	// Create a test configuration file with read only permission.
@@ -1117,7 +1132,7 @@ func Test_Save_ConfigFileReadOnly(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert that Save returns an error.
-	err = tfconfig.Save(testcontext.New(t), testDir)
+	err = tfconfig.Save(t.Context(), testDir)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "permission denied")
 }
@@ -1126,10 +1141,10 @@ func Test_Save_InvalidWorkingDir(t *testing.T) {
 	testDir := filepath.Join("invalid", uuid.New().String())
 	envRecipe, resourceRecipe := getTestInputs()
 
-	tfconfig, err := New(context.Background(), testRecipeName, &envRecipe, &resourceRecipe)
+	tfconfig, err := New(t.Context(), testRecipeName, &envRecipe, &resourceRecipe)
 	require.NoError(t, err)
 
-	err = tfconfig.Save(testcontext.New(t), testDir)
+	err = tfconfig.Save(t.Context(), testDir)
 	require.Error(t, err)
 	require.Equal(t, fmt.Sprintf("error creating file: open %s/main.tf.json: no such file or directory", testDir), err.Error())
 }

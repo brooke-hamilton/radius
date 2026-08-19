@@ -50,10 +50,9 @@ on:
 permissions: {}
 
 env:
-  # Dapr runtime version
-  DAPR_RUNTIME_VER: 1.15.4
-  # Dapr dashboard version
-  DAPR_DASHBOARD_VER: 0.15.0
+  # Dapr runtime version. Must stay on the same minor line as the Dapr CLI
+  # pinned in build/tools.yaml (DAPR_VERSION), which installs it.
+  DAPR_RUNTIME_VER: 1.18.2
   # The radius functional test timeout
   FUNCTIONALTEST_TIMEOUT: 15m
   # The base directory for storing test logs
@@ -143,7 +142,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Build artifacts from the same ref the tests job checks out so the
           # compiled artifacts match the source under test. On workflow_dispatch
@@ -153,14 +152,15 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-          cache: true
+          # Produces artifacts/images — don't restore a cache a prior run could have poisoned.
+          cache: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
@@ -186,32 +186,28 @@ jobs:
           DOCKER_REGISTRY: ${{ env.LOCAL_REGISTRY_SERVER }}:${{ env.LOCAL_REGISTRY_PORT }}
           DOCKER_TAG_VERSION: ${{ steps.gen-id.outputs.REL_VERSION }}
 
-      # Upload the three build artifacts concurrently. Each targets a distinct
-      # artifact name and source path, so they are independent; running them as a
-      # parallel group overlaps the small rad CLI and Bicep-types uploads with the
-      # much larger container-image upload. The implicit wait at the end of the
-      # group ensures all three uploads finish before the job completes.
-      - parallel:
-          - name: Upload rad CLI binary
-            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-            with:
-              name: radius_test_cli
-              path: ./dist/linux_amd64/release/rad
-              if-no-files-found: error
+      # Keep JavaScript actions sequential. Parallel action startup rewrites the shared
+      # GITHUB_EVENT_PATH and can expose a partially written payload to another action.
+      - name: Upload rad CLI binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: radius_test_cli
+          path: ./dist/linux_amd64/release/rad
+          if-no-files-found: error
 
-          - name: Upload container image artifacts
-            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-            with:
-              name: radius_test_images
-              path: ./dist/images
-              if-no-files-found: error
+      - name: Upload container image artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: radius_test_images
+          path: ./dist/images
+          if-no-files-found: error
 
-          - name: Upload Radius Bicep types artifacts
-            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-            with:
-              name: radius_test_bicep_types
-              path: ./hack/bicep-types-radius/generated
-              if-no-files-found: error
+      - name: Upload Radius Bicep types artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: radius_test_bicep_types
+          path: ./hack/bicep-types-radius/generated
+          if-no-files-found: error
 
   tests:
     name: Run ${{ matrix.name }} functional tests
@@ -260,7 +256,7 @@ jobs:
         run: echo "PR_NUMBER=${PR_NUMBER}" >> "${GITHUB_ENV}"
 
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Check out the same ref the build job built its artifacts from so the
           # source under test matches those artifacts. On workflow_dispatch that is
@@ -270,7 +266,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout samples repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: matrix.name == 'samples-noncloud'
         with:
           repository: radius-project/samples
@@ -279,39 +275,36 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-          cache: true
+          # Produces artifacts/images — don't restore a cache a prior run could have poisoned.
+          cache: false
 
       # The rad CLI, container images and Bicep types are built once in the
       # "build" job and shared with every matrix leg. Downloading them here avoids
       # recompiling the source and reinstalling the Node/yq toolchain in each leg.
       # They land in the same paths a local build would produce, so the remaining
-      # steps are unchanged. The three artifacts have distinct names and paths, so
-      # they download concurrently as a parallel group: the small rad CLI and
-      # Bicep-types downloads overlap with the larger container-image download. The
-      # implicit wait at the end of the group ensures all three are present before
-      # the local registry and Bicep publishing steps run.
-      - parallel:
-          - name: Download rad CLI binary
-            uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-            with:
-              name: radius_test_cli
-              path: ./dist/linux_amd64/release
+      # steps are unchanged. Keep these JavaScript actions sequential for the same
+      # shared GITHUB_EVENT_PATH constraint as the upload steps above.
+      - name: Download rad CLI binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: radius_test_cli
+          path: ./dist/linux_amd64/release
 
-          - name: Download container image artifacts
-            uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-            with:
-              name: radius_test_images
-              path: ./dist/images
+      - name: Download container image artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: radius_test_images
+          path: ./dist/images
 
-          - name: Download Radius Bicep types artifacts
-            uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-            with:
-              name: radius_test_bicep_types
-              path: ./hack/bicep-types-radius/generated
+      - name: Download Radius Bicep types artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: radius_test_bicep_types
+          path: ./hack/bicep-types-radius/generated
 
       - name: Create a secure local registry
         id: create-local-registry
@@ -323,7 +316,7 @@ jobs:
           registry-port: ${{ env.LOCAL_REGISTRY_PORT }}
 
       - name: Install bicep CLI
-        # Pinned version + checksum live in build/tools.mk.
+        # Pinned version + checksum live in build/tools.yaml.
         run: make install-bicep
 
       - name: Publish bicep types
@@ -351,10 +344,14 @@ jobs:
       - name: Load and Push container images
         # Images were built and saved to tarballs once in the "build" job and
         # downloaded above; load them into the local Docker daemon and push them to
-        # this leg's local registry. They are already tagged for
+        # this leg's local registry. Remove the tarballs after loading to preserve
+        # runner disk space, especially for the leg that creates a second KinD
+        # cluster. They are already tagged for
         # localhost:<port>, so no retag is needed before pushing.
         run: |
-          make docker-load-images && make docker-push
+          make docker-load-images
+          rm -rf ./dist/images
+          make docker-push
         env:
           DOCKER_REGISTRY: ${{ env.LOCAL_REGISTRY_SERVER }}:${{ env.LOCAL_REGISTRY_PORT }}
           DOCKER_TAG_VERSION: ${{ env.REL_VERSION }}
@@ -370,7 +367,7 @@ jobs:
           rad version
 
       - name: Install helm
-        # Version pinned in build/tools.mk (HELM_VERSION).
+        # Version pinned in build/tools.yaml (HELM_VERSION).
         run: make install-helm
 
       - name: Create a KinD cluster with a local registry
@@ -520,7 +517,7 @@ jobs:
             exit 1
           fi
 
-          # Poll logs for up to  iterations, 30 seconds each (upto 3 minutes total)
+          # Poll logs for up to  iterations, 30 seconds each (up to 3 minutes total)
           for i in {1..6}; do
             kubectl logs "$POD_NAME" -n radius-system | tee registermanifest_logs.txt > /dev/null
 
@@ -587,12 +584,12 @@ jobs:
 
       - name: Install Dapr CLI
         if: matrix.name == 'daprrp-noncloud'
-        # Version pinned in build/tools.mk (DAPR_VERSION).
+        # Version pinned in build/tools.yaml (DAPR_VERSION).
         run: make install-dapr
 
       - name: Install Dapr control plane
         if: matrix.name == 'daprrp-noncloud'
-        run: dapr init -k --wait --timeout 600 --runtime-version "${DAPR_RUNTIME_VER}" --dashboard-version "${DAPR_DASHBOARD_VER}"
+        run: dapr init -k --wait --timeout 600 --runtime-version "${DAPR_RUNTIME_VER}"
 
       - name: Publish Terraform test recipes
         run: |
@@ -715,23 +712,20 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - name: Collect Pod details
+      - name: Collect cluster diagnostics
         if: always()
-        # Diagnostic-only snapshot of cluster-wide pod state for post-mortem. A
-        # `kubectl describe pods -A` can race pod teardown and return a transient
-        # NotFound, so never let it fail the job.
+        # Diagnostic-only post-mortem snapshot. The script records each command's
+        # failure inline and keeps going, because the failures worth debugging are
+        # usually the ones where the control plane is unreachable and every
+        # kubectl call fails. Never let it fail the job.
         continue-on-error: true
         env:
-          MATRIX_NAME: ${{ matrix.name }}
-        run: |
-          POD_STATE_LOG_FILENAME="${RADIUS_CONTAINER_LOG_BASE}/${MATRIX_NAME}-tests-pod-states.log"
-          mkdir -p "$(dirname "$POD_STATE_LOG_FILENAME")"
-          {
-            echo "kubectl get pods -A"
-            kubectl get pods -A
-            echo "kubectl describe pods -A"
-            kubectl describe pods -A
-          }  >> "${POD_STATE_LOG_FILENAME}"
+          RADIUS_CONTAINER_LOG_PATH: ${{ github.workspace }}/${{ env.RADIUS_CONTAINER_LOG_BASE }}
+          DIAGNOSTICS_NAME: ${{ matrix.name }}
+          # kube-apiserver/etcd/kubelet logs are only worth the artifact size when
+          # something went wrong. An empty name skips the export.
+          KIND_CLUSTER_NAME: ${{ job.status != 'success' && 'kind' || '' }}
+        run: ./.github/scripts/collect-cluster-diagnostics.sh
 
       - name: Upload container logs
         if: always()

@@ -17,7 +17,6 @@ limitations under the License.
 package terraform
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -34,7 +33,6 @@ import (
 
 	"github.com/radius-project/radius/pkg/recipes/driver"
 	"github.com/radius-project/radius/pkg/recipes/terraform"
-	"github.com/radius-project/radius/test/testcontext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,7 +89,7 @@ func verifyDirectoryCleanup(t *testing.T, tfRootDirPath string, armOperationID s
 }
 
 func Test_Terraform_Execute_Success(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	armCtx := &v1.ARMRequestContext{
 		OperationID: uuid.New(),
 	}
@@ -144,7 +142,7 @@ func Test_Terraform_Execute_Success(t *testing.T) {
 }
 
 func Test_Terraform_Execute_DeploymentFailure(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	armCtx := &v1.ARMRequestContext{
 		OperationID: uuid.New(),
 	}
@@ -174,7 +172,7 @@ func Test_Terraform_Execute_DeploymentFailure(t *testing.T) {
 }
 
 func Test_Terraform_Execute_OutputsFailure(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	armCtx := &v1.ARMRequestContext{
 		OperationID: uuid.New(),
 	}
@@ -231,7 +229,7 @@ func Test_Terraform_Execute_EmptyPath(t *testing.T) {
 		DeploymentStatus: "setupError",
 	}
 
-	_, err := tfDriver.Execute(testcontext.New(t), driver.ExecuteOptions{
+	_, err := tfDriver.Execute(t.Context(), driver.ExecuteOptions{
 		BaseOptions: driver.BaseOptions{
 			Configuration: envConfig,
 			Recipe:        recipeMetadata,
@@ -243,7 +241,7 @@ func Test_Terraform_Execute_EmptyPath(t *testing.T) {
 }
 
 func Test_Terraform_Execute_EmptyOperationID_Success(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	ctx = v1.WithARMRequestContext(ctx, &v1.ARMRequestContext{})
 
 	tfExecutor, tfDriver := setup(t)
@@ -294,7 +292,7 @@ func Test_Terraform_Execute_EmptyOperationID_Success(t *testing.T) {
 }
 
 func Test_Terraform_Execute_MissingARMRequestContext_Panics(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	// Do not add ARMRequestContext to the context
 
 	_, tfDriver := setup(t)
@@ -312,7 +310,7 @@ func Test_Terraform_Execute_MissingARMRequestContext_Panics(t *testing.T) {
 }
 
 func TestTerraformDriver_GetRecipeMetadata_Success(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	armCtx := &v1.ARMRequestContext{
 		OperationID: uuid.New(),
 	}
@@ -349,7 +347,7 @@ func Test_Terraform_GetRecipeMetadata_EmptyPath(t *testing.T) {
 		},
 	}
 
-	_, err := tfDriver.GetRecipeMetadata(testcontext.New(t), driver.BaseOptions{
+	_, err := tfDriver.GetRecipeMetadata(t.Context(), driver.BaseOptions{
 		Recipe:     recipes.ResourceMetadata{},
 		Definition: envRecipe,
 	})
@@ -358,7 +356,7 @@ func Test_Terraform_GetRecipeMetadata_EmptyPath(t *testing.T) {
 }
 
 func TestTerraformDriver_GetRecipeMetadata_Failure(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	armCtx := &v1.ARMRequestContext{
 		OperationID: uuid.New(),
 	}
@@ -385,7 +383,7 @@ func TestTerraformDriver_GetRecipeMetadata_Failure(t *testing.T) {
 }
 
 func Test_Terraform_Delete_Success(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	armCtx := &v1.ARMRequestContext{
 		OperationID: uuid.New(),
 	}
@@ -420,7 +418,7 @@ func Test_Terraform_Delete_EmptyPath(t *testing.T) {
 		},
 	}
 
-	err := tfDriver.Delete(testcontext.New(t), driver.DeleteOptions{
+	err := tfDriver.Delete(t.Context(), driver.DeleteOptions{
 		BaseOptions: driver.BaseOptions{
 			Configuration: envConfig,
 			Recipe:        recipeMetadata,
@@ -433,7 +431,7 @@ func Test_Terraform_Delete_EmptyPath(t *testing.T) {
 }
 
 func Test_Terraform_Delete_Failure(t *testing.T) {
-	ctx := testcontext.New(t)
+	ctx := t.Context()
 	armCtx := &v1.ARMRequestContext{
 		OperationID: uuid.New(),
 	}
@@ -889,7 +887,7 @@ func Test_Terraform_PrepareRecipeResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			recipeResponse, err := d.prepareRecipeResponse(context.Background(), opts.BaseOptions.Definition, opts.Configuration, tt.state)
+			recipeResponse, err := d.prepareRecipeResponse(t.Context(), opts.BaseOptions.Definition, opts.Configuration, tt.state)
 			require.Equal(t, tt.expectedErr, err)
 			require.Equal(t, tt.expectedResponse, recipeResponse)
 		})
@@ -931,6 +929,37 @@ func Test_Terraform_PrepareRecipeResponse_DirectModule(t *testing.T) {
 				Status: &rpv1.RecipeStatus{
 					TemplateKind:    recipes.TemplateKindTerraform,
 					TemplatePath:    "ballj/postgresql/kubernetes",
+					TemplateVersion: "1.0",
+				},
+			},
+		},
+		{
+			desc: "direct module with secretOutputs mapping - plain output forced to secret (AVM)",
+			definition: recipes.EnvironmentDefinition{
+				Name:            "eventhub",
+				Driver:          recipes.TemplateKindTerraform,
+				TemplatePath:    "Azure/eventhub/azurerm",
+				ResourceType:    "Demo.Messaging/kafka",
+				TemplateVersion: "1.0",
+				Outputs:         map[string]string{"host": "name"},
+				SecretOutputs:   map[string]string{"connectionString": "primary_connection_string"},
+			},
+			state: &tfjson.State{
+				Values: &tfjson.StateValues{
+					Outputs: map[string]*tfjson.StateOutput{
+						// The module declares primary_connection_string as a plain (non-sensitive) output.
+						"name":                      {Value: "myhub"},
+						"primary_connection_string": {Value: "Endpoint=sb://myhub/;SharedAccessKey=abc"},
+					},
+					RootModule: &tfjson.StateModule{},
+				},
+			},
+			expectedResponse: &recipes.RecipeOutput{
+				Values:  map[string]any{"host": "myhub"},
+				Secrets: map[string]any{"connectionString": "Endpoint=sb://myhub/;SharedAccessKey=abc"},
+				Status: &rpv1.RecipeStatus{
+					TemplateKind:    recipes.TemplateKindTerraform,
+					TemplatePath:    "Azure/eventhub/azurerm",
 					TemplateVersion: "1.0",
 				},
 			},
@@ -1038,7 +1067,7 @@ func Test_Terraform_PrepareRecipeResponse_DirectModule(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			recipeResponse, err := d.prepareRecipeResponse(context.Background(), tt.definition, recipes.Configuration{}, tt.state)
+			recipeResponse, err := d.prepareRecipeResponse(t.Context(), tt.definition, recipes.Configuration{}, tt.state)
 			require.Equal(t, tt.expectedErr, err)
 			require.Equal(t, tt.expectedResponse, recipeResponse)
 		})
@@ -1046,7 +1075,7 @@ func Test_Terraform_PrepareRecipeResponse_DirectModule(t *testing.T) {
 }
 
 func Test_FindSecretIDs(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	definition := recipes.EnvironmentDefinition{TemplatePath: "git::https://dev.azure.com/project/module"}
 	_, driver := setup(t)
 

@@ -32,7 +32,6 @@ import (
 	"github.com/radius-project/radius/pkg/ucp/datamodel"
 	"github.com/radius-project/radius/pkg/ucp/resources"
 	"github.com/radius-project/radius/pkg/ucp/trackedresource"
-	"github.com/radius-project/radius/test/testcontext"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
@@ -118,6 +117,30 @@ func Test_Run(t *testing.T) {
 		},
 	}
 
+	t.Run("failure (invalid resource ID)", func(t *testing.T) {
+		p, _, _, _, _ := createController(t)
+
+		svcContext := &v1.ARMRequestContext{
+			APIVersion: apiVersion,
+		}
+		ctx := t.Context()
+		ctx = v1.WithARMRequestContext(ctx, svcContext)
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/planes/radius/local/resourceGroups/test-rg/providers/Applications.Test//my-resource?api-version="+apiVersion, nil)
+
+		expected := rest.NewBadRequestARMResponse(v1.ErrorResponse{
+			Error: &v1.ErrorDetails{
+				Code:    v1.CodeInvalid,
+				Message: "the request URL does not contain a valid resource ID",
+			},
+		})
+
+		response, err := p.Run(ctx, w, req.WithContext(ctx))
+		require.NoError(t, err)
+		require.Equal(t, expected, response)
+	})
+
 	t.Run("success (non-tracked)", func(t *testing.T) {
 		p, databaseClient, _, roundTripper, _ := createController(t)
 
@@ -125,7 +148,7 @@ func Test_Run(t *testing.T) {
 			APIVersion: apiVersion,
 			ResourceID: id,
 		}
-		ctx := testcontext.New(t)
+		ctx := t.Context()
 		ctx = v1.WithARMRequestContext(ctx, svcContext)
 
 		w := httptest.NewRecorder()
@@ -165,7 +188,7 @@ func Test_Run(t *testing.T) {
 			APIVersion: apiVersion,
 			ResourceID: id,
 		}
-		ctx := testcontext.New(t)
+		ctx := t.Context()
 		ctx = v1.WithARMRequestContext(ctx, svcContext)
 
 		w := httptest.NewRecorder()
@@ -208,7 +231,7 @@ func Test_Run(t *testing.T) {
 			APIVersion: apiVersion,
 			ResourceID: id,
 		}
-		ctx := testcontext.New(t)
+		ctx := t.Context()
 		ctx = v1.WithARMRequestContext(ctx, svcContext)
 
 		w := httptest.NewRecorder()
@@ -264,7 +287,7 @@ func Test_Run(t *testing.T) {
 			APIVersion: apiVersion,
 			ResourceID: id,
 		}
-		ctx := testcontext.New(t)
+		ctx := t.Context()
 		ctx = v1.WithARMRequestContext(ctx, svcContext)
 
 		w := httptest.NewRecorder()
@@ -326,7 +349,7 @@ func Test_Run(t *testing.T) {
 			APIVersion: apiVersion,
 			ResourceID: id,
 		}
-		ctx := testcontext.New(t)
+		ctx := t.Context()
 		ctx = v1.WithARMRequestContext(ctx, svcContext)
 
 		w := httptest.NewRecorder()
@@ -357,7 +380,7 @@ func Test_ProxyController_PrepareProxyRequest(t *testing.T) {
 			URL:    originalURL}
 
 		p, _, _, _, _ := createController(t)
-		proxyReq, err := p.PrepareProxyRequest(testcontext.New(t), originalReq, downstream, relativePath)
+		proxyReq, err := p.PrepareProxyRequest(t.Context(), originalReq, downstream, relativePath)
 		require.NoError(t, err)
 		require.NotNil(t, proxyReq)
 
@@ -377,7 +400,7 @@ func Test_ProxyController_PrepareProxyRequest(t *testing.T) {
 			URL:    originalURL}
 
 		p, _, _, _, _ := createController(t)
-		proxyReq, err := p.PrepareProxyRequest(testcontext.New(t), originalReq, downstream, relativePath)
+		proxyReq, err := p.PrepareProxyRequest(t.Context(), originalReq, downstream, relativePath)
 		require.NoError(t, err)
 		require.NotNil(t, proxyReq)
 
@@ -391,7 +414,7 @@ func Test_ProxyController_PrepareProxyRequest(t *testing.T) {
 		originalReq := &http.Request{Header: http.Header{}, URL: &url.URL{}}
 
 		p, _, _, _, _ := createController(t)
-		proxyReq, err := p.PrepareProxyRequest(testcontext.New(t), originalReq, "\ninvalid", relativePath)
+		proxyReq, err := p.PrepareProxyRequest(t.Context(), originalReq, "\ninvalid", relativePath)
 		require.Error(t, err)
 		require.Equal(t, "failed to parse downstream URL: parse \"\\ninvalid\": net/url: invalid control character in URL", err.Error())
 		require.Nil(t, proxyReq)

@@ -17,7 +17,6 @@ limitations under the License.
 package git
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,6 +47,15 @@ func initTestRepo(t *testing.T) string {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("skipping git-backed test: git binary not found in PATH")
 	}
+
+	// Isolate git from the developer's/CI's real global and system configuration. Without this,
+	// "git init" reads the ambient ~/.gitconfig, which makes these tests depend on external state
+	// and race with any other test process that writes the shared global config (for example via
+	// "git config --global"), producing intermittent "unknown error occurred while reading the
+	// configuration files" failures.
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_SYSTEM", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 	root := t.TempDir()
 	runGit(t, root, "git", "init", "-b", "main")
@@ -91,7 +99,7 @@ func TestOpen_CreatesOrphanBranchAndIsolatesState(t *testing.T) {
 	root := initTestRepo(t)
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	branch := "radius-state-test"
 	s, err := NewGitArchive().Open(ctx, branch)
 	require.NoError(t, err)
@@ -114,7 +122,7 @@ func TestOpen_RestoresPreviousState(t *testing.T) {
 	root := initTestRepo(t)
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	b := NewGitArchive()
 
 	// First session writes state and commits it.
@@ -138,7 +146,7 @@ func TestOpen_ReusesBranch(t *testing.T) {
 	root := initTestRepo(t)
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	b := NewGitArchive()
 	branch := "radius-state-test"
 
@@ -155,7 +163,7 @@ func TestOpen_ReusesBranch(t *testing.T) {
 
 func TestOpen_UsesRemoteBranch(t *testing.T) {
 	sourceDir, remoteDir := initTestRepoWithOrigin(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	branch := "radius-state-test"
 
 	chdir(t, sourceDir)
@@ -181,7 +189,7 @@ func TestCommit_NoRemoteIsNotAnError(t *testing.T) {
 	root := initTestRepo(t)
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewGitArchive().Open(ctx, "radius-state-test")
 	require.NoError(t, err)
 	defer s.Close(ctx)
@@ -195,7 +203,7 @@ func TestCommit_NoChangesIsNoOp(t *testing.T) {
 	root := initTestRepo(t)
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewGitArchive().Open(ctx, "radius-state-test")
 	require.NoError(t, err)
 	defer s.Close(ctx)
@@ -209,7 +217,7 @@ func TestCommit_NoChangesDoesNotPush(t *testing.T) {
 	repoDir, _ := initTestRepoWithOrigin(t)
 	chdir(t, repoDir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	branch := "radius-state-test"
 	s, err := NewGitArchive().Open(ctx, branch)
 	require.NoError(t, err)
@@ -228,7 +236,7 @@ func TestCommit_PushesToRemote(t *testing.T) {
 	repoDir, _ := initTestRepoWithOrigin(t)
 	chdir(t, repoDir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	branch := "radius-state-test"
 	s, err := NewGitArchive().Open(ctx, branch)
 	require.NoError(t, err)
@@ -245,7 +253,7 @@ func TestCommit_ReturnsErrorWhenPushFails(t *testing.T) {
 	repoDir, _ := initTestRepoWithOrigin(t)
 	chdir(t, repoDir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewGitArchive().Open(ctx, "radius-state-test")
 	require.NoError(t, err)
 	defer s.Close(ctx)
@@ -272,7 +280,7 @@ func TestCommit_CommitsWithoutConfiguredIdentity(t *testing.T) {
 	runGit(t, root, "git", "config", "--unset", "user.email")
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewGitArchive().Open(ctx, "radius-state-test")
 	require.NoError(t, err)
 	defer s.Close(ctx)
@@ -298,7 +306,7 @@ func TestCommit_CommitsWithOnlyEmailConfigured(t *testing.T) {
 	runGit(t, root, "git", "config", "--unset", "user.name")
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewGitArchive().Open(ctx, "radius-state-test")
 	require.NoError(t, err)
 	defer s.Close(ctx)
@@ -321,9 +329,9 @@ func TestOpen_UnreachableRemoteFailsLoudly(t *testing.T) {
 	chdir(t, root)
 
 	branch := "radius-state-test"
-	_, err := NewGitArchive().Open(context.Background(), branch)
+	_, err := NewGitArchive().Open(t.Context(), branch)
 	require.Error(t, err, "Open must fail when the configured remote is unreachable")
-	require.False(t, branchExists(context.Background(), root, branch),
+	require.False(t, branchExists(t.Context(), root, branch),
 		"Open must not create a local branch when it cannot confirm remote state")
 }
 
@@ -338,7 +346,7 @@ func TestOpen_OutsideGitRepositoryReturnsError(t *testing.T) {
 	// A bare temp dir with no "git init" is not inside any repository.
 	chdir(t, t.TempDir())
 
-	_, err := NewGitArchive().Open(context.Background(), "radius-state-test")
+	_, err := NewGitArchive().Open(t.Context(), "radius-state-test")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to determine git repo root")
 }
@@ -351,7 +359,7 @@ func TestOpen_SerializesSessionsPerBranch(t *testing.T) {
 	root := initTestRepo(t)
 	chdir(t, root)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	b := NewGitArchive()
 	const branch = "radius-state-test"
 

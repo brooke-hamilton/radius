@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -71,6 +72,10 @@ func NewCommand(factory framework.Factory) (*cobra.Command, framework.Runner) {
 
 The deploy command compiles a Bicep or ARM template and deploys it to your default environment (unless otherwise specified).
 
+The template can be a local file path or an http(s) URL. Remote templates are downloaded before
+being compiled and deployed, similar to how tools such as kubectl accept remote URLs. Remote
+templates must be self-contained; relative imports and other local file dependencies are not supported.
+
 You can combine Radius types as as well as other types that are available in Bicep such as Azure resources. See
 the Radius documentation for information about describing your application and resources with Bicep.
 
@@ -93,6 +98,9 @@ rad deploy myapp.bicep
 
 # deploy an ARM template (json)
 rad deploy myapp.json
+
+# deploy a Bicep template from a remote URL
+rad deploy https://example.com/myapp.bicep
 
 # deploy to a specific workspace
 rad deploy myapp.bicep --workspace production
@@ -131,6 +139,7 @@ rad deploy myapp.bicep --parameters @myfile.json --parameters version=latest
 	commonflags.AddEnvironmentNameFlag(cmd)
 	commonflags.AddApplicationNameFlag(cmd)
 	commonflags.AddParameterFlag(cmd)
+	cmd.Flags().Bool("preview", false, "Deploy the application using the Radius.Core/applications resource type instead of Applications.Core/applications (can also be set via RADIUS_PREVIEW=true)")
 
 	return cmd, runner
 }
@@ -156,6 +165,9 @@ type Runner struct {
 	Workspace                *workspaces.Workspace
 	Providers                *clients.Providers
 	EnvResult                *EnvironmentCheckResult
+	// Preview indicates that the application should be deployed using the
+	// Radius.Core/applications resource type instead of Applications.Core/applications.
+	Preview bool
 }
 
 // NewRunner creates a new instance of the `rad deploy` runner.
@@ -199,7 +211,7 @@ func (r *Runner) Validate(cmd *cobra.Command, args []string) error {
 
 	// Prepare the template early to check if it contains an environment resource.
 	// This allows us to skip environment validation if the template will create one.
-	r.Template, err = r.Bicep.PrepareTemplate(r.FilePath)
+	r.Template, err = r.Bicep.PrepareTemplate(cmd.Context(), r.FilePath)
 	if err != nil {
 		return err
 	}
@@ -232,6 +244,20 @@ func (r *Runner) Validate(cmd *cobra.Command, args []string) error {
 	r.ApplicationName, err = cli.ReadApplicationName(cmd, *workspace)
 	if err != nil {
 		return err
+	}
+
+	// Resolve whether to use the Radius.Core preview behavior for the application resource.
+	r.Preview, err = resolvePreview(cmd)
+	if err != nil {
+		return err
+	}
+
+	// The --preview flag only affects the application resource, so it requires an application.
+	// Reject only when the flag was set explicitly on the command line; env-var activation
+	// (RADIUS_PREVIEW=true) is intentionally tolerated as a no-op so it can be set globally
+	// without breaking application-less deployments.
+	if cmd.Flags().Changed("preview") && r.Preview && r.ApplicationName == "" {
+		return clierrors.Message("The --preview flag requires an application. Use --application to specify the application name, or set a default application in your workspace.")
 	}
 
 	if r.EnvironmentNameOrID != "" {
@@ -296,7 +322,11 @@ func (r *Runner) Run(ctx context.Context) error {
 	if r.ApplicationName != "" {
 		// Environment validation has already happened, so only create application if we have an environment
 		if r.Providers.Radius.EnvironmentID != "" {
-			if _, err := isApplicationsCoreProvider(r.Providers.Radius.EnvironmentID); err == nil {
+			if r.Preview {
+				if err := r.createRadiusCoreApplicationIfNotFound(ctx); err != nil {
+					return err
+				}
+			} else {
 				client, err := r.ConnectionFactory.CreateApplicationsManagementClient(ctx, *r.Workspace)
 				if err != nil {
 					return err
@@ -310,37 +340,22 @@ func (r *Runner) Run(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-			} else {
-				client := r.RadiusCoreClientFactory.NewApplicationsClient()
-				_, err := client.Get(ctx, r.Workspace.Scope, r.ApplicationName, nil)
-				if err != nil {
-					if clients.Is404Error(err) {
-						_, err = client.CreateOrUpdate(ctx, r.Workspace.Scope, r.ApplicationName, v20250801preview.ApplicationResource{
-							Location: to.Ptr(v1.LocationGlobal),
-							Properties: &v20250801preview.ApplicationProperties{
-								Environment: &r.Providers.Radius.EnvironmentID,
-							},
-						}, nil)
-						if err != nil {
-							return err
-						}
-					} else {
-						return err
-					}
-				}
 			}
 		}
 	}
+
+	// Redact any credentials embedded in a remote template URL before displaying it.
+	displayPath := bicep.RedactTemplatePath(r.FilePath)
 
 	progressText := ""
 	if r.ApplicationName == "" {
 		progressText = fmt.Sprintf(
 			"Deploying template '%v' into environment '%v' from workspace '%v'...\n\n"+
-				"Deployment In Progress...", r.FilePath, r.EnvironmentNameOrID, r.Workspace.Name)
+				"Deployment In Progress...", displayPath, r.EnvironmentNameOrID, r.Workspace.Name)
 	} else {
 		progressText = fmt.Sprintf(
 			"Deploying template '%v' for application '%v' and environment '%v' from workspace '%v'...\n\n"+
-				"Deployment In Progress... ", r.FilePath, r.ApplicationName, r.EnvironmentNameOrID, r.Workspace.Name)
+				"Deployment In Progress... ", displayPath, r.ApplicationName, r.EnvironmentNameOrID, r.Workspace.Name)
 	}
 
 	// Before deploying, set up recipe packs for any Radius.Core environments in the
@@ -434,22 +449,61 @@ func (r *Runner) reportMissingParameters(template map[string]any) error {
 		details = append(details, fmt.Sprintf("  - %v", errors[key]))
 	}
 
-	return clierrors.Message("The template %q could not be deployed because of the following errors:\n\n%v", r.FilePath, strings.Join(details, "\n"))
+	return clierrors.Message("The template %q could not be deployed because of the following errors:\n\n%v", bicep.RedactTemplatePath(r.FilePath), strings.Join(details, "\n"))
 }
 
-// isApplicationsCoreProvider returns true if the provider is Applications.Core based on the environment ID
-// It returns an error if the ID cannot be parsed
-func isApplicationsCoreProvider(id string) (bool, error) {
-	parsedID, err := resources.Parse(id)
+// resolvePreview reports whether the deploy command should use the Radius.Core preview
+// behavior for the application resource. It returns true when the --preview flag is explicitly
+// set, or when the flag is unset and the RADIUS_PREVIEW environment variable is "true"
+// (case-insensitive). The --preview flag takes precedence over the environment variable.
+//
+// The --preview flag is only registered on the `rad deploy` command. Other commands (e.g.
+// `rad run`) embed this runner without registering the flag; for those, preview is not
+// supported and this function returns false without error.
+func resolvePreview(cmd *cobra.Command) (bool, error) {
+	if cmd.Flags().Lookup("preview") == nil {
+		return false, nil
+	}
+	preview, err := cmd.Flags().GetBool("preview")
 	if err != nil {
 		return false, err
 	}
-
-	providerNamespace := parsedID.ProviderNamespace()
-	if strings.EqualFold(providerNamespace, appCoreProviderName) {
-		return true, nil
+	if !cmd.Flags().Changed("preview") {
+		preview = strings.EqualFold(os.Getenv("RADIUS_PREVIEW"), "true")
 	}
-	return false, nil
+	return preview, nil
+}
+
+// createRadiusCoreApplicationIfNotFound creates the application as a Radius.Core/applications
+// resource if it does not already exist. It lazily initializes the Radius.Core client factory
+// when needed.
+func (r *Runner) createRadiusCoreApplicationIfNotFound(ctx context.Context) error {
+	if r.RadiusCoreClientFactory == nil {
+		clientFactory, err := cmd.InitializeRadiusCoreClientFactory(ctx, r.Workspace)
+		if err != nil {
+			return err
+		}
+		r.RadiusCoreClientFactory = clientFactory
+	}
+
+	client := r.RadiusCoreClientFactory.NewApplicationsClient()
+	_, err := client.Get(ctx, r.Workspace.Scope, r.ApplicationName, nil)
+	if err != nil {
+		if clients.Is404Error(err) {
+			_, err = client.CreateOrUpdate(ctx, r.Workspace.Scope, r.ApplicationName, v20250801preview.ApplicationResource{
+				Location: to.Ptr(v1.LocationGlobal),
+				Properties: &v20250801preview.ApplicationProperties{
+					Environment: &r.Providers.Radius.EnvironmentID,
+				},
+			}, nil)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+	return nil
 }
 
 // handleEnvironmentError handles common error patterns for environment retrieval
@@ -789,6 +843,10 @@ func (r *Runner) configureProviders() error {
 			providerNamespace := appCoreProviderName
 			if parsedID, err := resources.Parse(r.Providers.Radius.EnvironmentID); err == nil {
 				providerNamespace = parsedID.ProviderNamespace()
+			}
+			// When preview is enabled, the application is deployed as a Radius.Core/applications resource.
+			if r.Preview {
+				providerNamespace = radiusCoreProviderName
 			}
 			r.Providers.Radius.ApplicationID = r.Workspace.Scope + "/providers/" + providerNamespace + "/applications/" + r.ApplicationName
 

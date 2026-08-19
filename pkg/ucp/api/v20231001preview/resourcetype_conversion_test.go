@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	v1 "github.com/radius-project/radius/pkg/armrpc/api/v1"
+	"github.com/radius-project/radius/pkg/defaults"
 	"github.com/radius-project/radius/pkg/ucp/datamodel"
 	"github.com/radius-project/radius/test/testutil"
 
@@ -51,6 +52,9 @@ func Test_ResourceType_VersionedToDataModel(t *testing.T) {
 				Properties: datamodel.ResourceTypeProperties{
 					Capabilities:      []string{},
 					DefaultAPIVersion: new("2025-01-01"),
+					// The fixture has no icon; conversion substitutes the product
+					// default icon's hash.
+					IconHash: new(defaults.DefaultIcon().Hash),
 				},
 			},
 		},
@@ -141,7 +145,7 @@ func Test_ResourceType_Icon_VersionedToDataModel(t *testing.T) {
 		require.Equal(t, expectedHash, *rt.Properties.IconHash)
 	})
 
-	t.Run("no icon leaves icon and hash unset", func(t *testing.T) {
+	t.Run("no icon substitutes the product default hash", func(t *testing.T) {
 		versioned := &ResourceTypeResource{
 			ID:         new("/planes/radius/local/providers/System.Resources/resourceProviders/Applications.Test/resourceTypes/testResources"),
 			Name:       new("testResources"),
@@ -151,9 +155,14 @@ func Test_ResourceType_Icon_VersionedToDataModel(t *testing.T) {
 		dm, err := versioned.ConvertTo()
 		require.NoError(t, err)
 
+		// Types registered without an icon still get an iconHash — the product
+		// default's hash — so downstream consumers never see a null iconHash
+		// on a registered type. Icon bytes stay unset; consumers resolve them
+		// from the embedded default in-binary.
 		rt := dm.(*datamodel.ResourceType)
 		require.Nil(t, rt.Properties.Icon)
-		require.Nil(t, rt.Properties.IconHash)
+		require.NotNil(t, rt.Properties.IconHash)
+		require.Equal(t, defaults.DefaultIcon().Hash, *rt.Properties.IconHash)
 	})
 }
 

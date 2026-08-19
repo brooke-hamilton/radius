@@ -17,7 +17,6 @@ limitations under the License.
 package dynamic
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -306,11 +305,6 @@ func Test_Dynamic_Resource_Recipe_Lifecycle(t *testing.T) {
 					"port":     float64(8080), // This is an artifact of the JSON unmarshal process. It's wierd but intended.
 					"hostname": "example.com",
 				},
-				"secrets": map[string]any{
-					"password": map[string]any{
-						"Value": "v3ryS3cr3t",
-					},
-				},
 				"outputResources": []any{
 					map[string]any{
 						"id":            "/planes/example/testing/providers/Test.Namespace/testResource/example",
@@ -339,9 +333,17 @@ func Test_Dynamic_Resource_Recipe_Lifecycle(t *testing.T) {
 	response = ucp.MakeRequest(http.MethodGet, testRecipeResourceURL, nil)
 	response.EqualsValue(200, expectedResource)
 
+	// Verify the recipe's secret output ("v3ryS3cr3t") is never exposed through the resource GET
+	// response that `rad resource show` renders. This resource type declares no secrets block, so the
+	// secret output is dropped entirely; either way the value must never appear on the resource.
+	require.NotContains(t, response.Body.String(), "v3ryS3cr3t",
+		"recipe secret output value must not appear in the resource GET response (rad resource show)")
+
 	// GET (list at plane-scope)
 	response = ucp.MakeRequest(http.MethodGet, "/planes/radius/testing/resourcegroups/test-group/providers/Applications.Test/exampleRecipeResources"+"?api-version="+apiVersion, nil)
 	response.EqualsValue(200, expectedList)
+	require.NotContains(t, response.Body.String(), "v3ryS3cr3t",
+		"recipe secret output value must not appear in the resource LIST response")
 
 	// GET (list at resourcegroup-scope)
 	response = ucp.MakeRequest(http.MethodGet, "/planes/radius/testing/providers/Applications.Test/exampleRecipeResources"+"?api-version="+apiVersion, nil)
@@ -357,7 +359,7 @@ func Test_Dynamic_Resource_Recipe_Lifecycle(t *testing.T) {
 }
 
 func createRadiusPlane(server *ucptesthost.TestHost) v20231001preview.RadiusPlanesClientCreateOrUpdateResponse {
-	ctx := context.Background()
+	ctx := server.T().Context()
 
 	plane := v20231001preview.RadiusPlaneResource{
 		Location: to.Ptr(v1.LocationGlobal),
@@ -380,7 +382,7 @@ func createRadiusPlane(server *ucptesthost.TestHost) v20231001preview.RadiusPlan
 }
 
 func createResourceProvider(server *ucptesthost.TestHost) {
-	ctx := context.Background()
+	ctx := server.T().Context()
 
 	resourceProvider := v20231001preview.ResourceProviderResource{
 		Location:   to.Ptr(v1.LocationGlobal),
@@ -396,7 +398,7 @@ func createResourceProvider(server *ucptesthost.TestHost) {
 }
 
 func createInertResourceType(server *ucptesthost.TestHost) {
-	ctx := context.Background()
+	ctx := server.T().Context()
 
 	resourceType := v20231001preview.ResourceTypeResource{
 		Properties: &v20231001preview.ResourceTypeProperties{
@@ -415,7 +417,7 @@ func createInertResourceType(server *ucptesthost.TestHost) {
 }
 
 func createRecipeResourceType(server *ucptesthost.TestHost) {
-	ctx := context.Background()
+	ctx := server.T().Context()
 
 	resourceType := v20231001preview.ResourceTypeResource{
 		Properties: &v20231001preview.ResourceTypeProperties{},
@@ -430,7 +432,7 @@ func createRecipeResourceType(server *ucptesthost.TestHost) {
 }
 
 func createAPIVersion(server *ucptesthost.TestHost, resourceType string, schema map[string]any) {
-	ctx := context.Background()
+	ctx := server.T().Context()
 
 	apiVersionResource := v20231001preview.APIVersionResource{
 		Properties: &v20231001preview.APIVersionProperties{
@@ -447,7 +449,7 @@ func createAPIVersion(server *ucptesthost.TestHost, resourceType string, schema 
 }
 
 func createLocation(server *ucptesthost.TestHost, resourceType string) {
-	ctx := context.Background()
+	ctx := server.T().Context()
 
 	location := v20231001preview.LocationResource{
 		Properties: &v20231001preview.LocationProperties{
@@ -470,7 +472,7 @@ func createLocation(server *ucptesthost.TestHost, resourceType string) {
 }
 
 func createResourceGroup(server *ucptesthost.TestHost) {
-	ctx := context.Background()
+	ctx := server.T().Context()
 
 	resourceGroup := v20231001preview.ResourceGroupResource{
 		Location:   to.Ptr(v1.LocationGlobal),

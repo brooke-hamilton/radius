@@ -17,7 +17,6 @@ limitations under the License.
 package git
 
 import (
-	"context"
 	"errors"
 	"sort"
 	"testing"
@@ -36,7 +35,7 @@ func TestNewStore_DefaultsBranch(t *testing.T) {
 	s, err := NewStore(Options{})
 	require.NoError(t, err)
 	require.NotNil(t, s)
-	assert.Equal(t, DefaultGraphBranch, s.branch)
+	assert.Equal(t, DefaultGraphArchive, s.archiveName)
 }
 
 func TestNewStore_HonorsBranch(t *testing.T) {
@@ -44,7 +43,30 @@ func TestNewStore_HonorsBranch(t *testing.T) {
 
 	s, err := NewStore(Options{Branch: "custom"})
 	require.NoError(t, err)
-	assert.Equal(t, "custom", s.branch)
+	assert.Equal(t, "custom", s.archiveName)
+}
+
+func TestNewStore_HonorsArchiveName(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(Options{ArchiveName: "custom"})
+	require.NoError(t, err)
+	assert.Equal(t, "custom", s.archiveName)
+}
+
+func TestNewStore_RejectsConflictingArchiveNames(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewStore(Options{ArchiveName: "archive-name", Branch: "branch-name"})
+	require.ErrorContains(t, err, "conflicts with deprecated branch option")
+}
+
+func TestNewStore_AcceptsMatchingArchiveNames(t *testing.T) {
+	t.Parallel()
+
+	s, err := NewStore(Options{ArchiveName: "shared-name", Branch: "shared-name"})
+	require.NoError(t, err)
+	assert.Equal(t, "shared-name", s.archiveName)
 }
 
 func TestKeyFromPath(t *testing.T) {
@@ -84,7 +106,7 @@ func TestSave_RejectsNilPayload(t *testing.T) {
 	s, err := NewStore(Options{Branch: "store-" + t.Name()})
 	require.NoError(t, err)
 
-	err = s.Save(context.Background(), persistence.Key{Namespace: "ns", Name: "n"}, nil, persistence.SaveOptions{})
+	err = s.Save(t.Context(), persistence.Key{Namespace: "ns", Name: "n"}, nil, persistence.SaveOptions{})
 	require.Error(t, err)
 }
 
@@ -92,7 +114,7 @@ func TestStore_SaveLoadDeleteRoundTrip(t *testing.T) {
 	repoDir := initTestRepo(t)
 	chdir(t, repoDir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewStore(Options{Branch: "store-" + t.Name()})
 	require.NoError(t, err)
 
@@ -128,7 +150,7 @@ func TestStore_LoadMissingKeyReturnsErrNotFound(t *testing.T) {
 	repoDir := initTestRepo(t)
 	chdir(t, repoDir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewStore(Options{Branch: "store-" + t.Name()})
 	require.NoError(t, err)
 
@@ -144,7 +166,7 @@ func TestStore_DeleteMissingKeyReturnsErrNotFound(t *testing.T) {
 	s, err := NewStore(Options{Branch: "store-" + t.Name()})
 	require.NoError(t, err)
 
-	err = s.Delete(context.Background(), persistence.Key{Namespace: "ns", Name: "missing"})
+	err = s.Delete(t.Context(), persistence.Key{Namespace: "ns", Name: "missing"})
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, persistence.ErrNotFound))
 }
@@ -153,7 +175,7 @@ func TestStore_List(t *testing.T) {
 	repoDir := initTestRepo(t)
 	chdir(t, repoDir)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := NewStore(Options{Branch: "store-" + t.Name()})
 	require.NoError(t, err)
 
@@ -190,7 +212,7 @@ func TestStore_ListMissingNamespaceReturnsEmpty(t *testing.T) {
 	s, err := NewStore(Options{Branch: "store-" + t.Name()})
 	require.NoError(t, err)
 
-	got, err := s.List(context.Background(), "does-not-exist")
+	got, err := s.List(t.Context(), "does-not-exist")
 	require.NoError(t, err)
 	assert.Empty(t, got)
 }
@@ -215,7 +237,7 @@ func TestStore_ListRejectsInvalidNamespace(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := s.List(context.Background(), tc.namespace)
+			got, err := s.List(t.Context(), tc.namespace)
 			require.Error(t, err)
 			assert.Nil(t, got)
 		})
