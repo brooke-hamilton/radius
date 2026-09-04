@@ -19,7 +19,24 @@ type workflow interface {
 // CLI dispatches development commands.
 type CLI struct {
 	workflow workflow
+	stdout   io.Writer
 }
+
+const helpText = `Usage:
+  dev <command> [options]
+
+General
+  help   Display this help.
+
+Build
+  build  Build all Go packages, configured binaries, and the Bicep payload.
+
+Test
+  test   Provision test tools and run Go, validation, Helm, and installation tests.
+
+Test argument forwarding
+  dev test [gotestsum options] [-- go test options]
+`
 
 // New creates a CLI rooted at the Radius repository.
 func New(root string, stdout, stderr io.Writer) *CLI {
@@ -41,27 +58,53 @@ func New(root string, stdout, stderr io.Writer) *CLI {
 			dir:  root,
 		})
 	}
-	return &CLI{workflow: workflows}
+	return &CLI{workflow: workflows, stdout: stdout}
 }
 
 // Run executes a development command.
 func (c *CLI) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("a command is required: build or test")
+		return c.printHelp()
 	}
 
 	switch args[0] {
+	case "help", "--help", "-h":
+		if len(args) != 1 {
+			return fmt.Errorf("%s does not accept arguments: %v", args[0], args[1:])
+		}
+		return c.printHelp()
 	case "build":
+		if len(args) == 2 && isHelpFlag(args[1]) {
+			return c.printHelp()
+		}
 		if len(args) != 1 {
 			return fmt.Errorf("build does not accept arguments: %v", args[1:])
 		}
 		return c.workflow.Build(ctx)
 	case "test":
+		if len(args) == 2 && isHelpFlag(args[1]) {
+			return c.printHelp()
+		}
 		gotestsumArgs, goTestArgs := splitTestArgs(args[1:])
 		return c.workflow.Test(ctx, gotestsumArgs, goTestArgs)
 	default:
-		return fmt.Errorf("unknown command %q: expected build or test", args[0])
+		return fmt.Errorf("unknown command %q: run \"dev help\" for usage", args[0])
 	}
+}
+
+func (c *CLI) printHelp() error {
+	output := c.stdout
+	if output == nil {
+		output = io.Discard
+	}
+	if _, err := io.WriteString(output, helpText); err != nil {
+		return fmt.Errorf("write help: %w", err)
+	}
+	return nil
+}
+
+func isHelpFlag(arg string) bool {
+	return arg == "--help" || arg == "-h"
 }
 
 func splitTestArgs(args []string) ([]string, []string) {

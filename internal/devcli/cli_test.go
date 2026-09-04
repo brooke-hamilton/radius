@@ -1,6 +1,7 @@
 package devcli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -30,10 +31,11 @@ func TestCLI_Run(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		args      []string
-		wantError string
-		assert    func(*testing.T, *fakeWorkflow)
+		name       string
+		args       []string
+		wantError  string
+		wantOutput string
+		assert     func(*testing.T, *fakeWorkflow)
 	}{
 		{
 			name: "build",
@@ -58,9 +60,15 @@ func TestCLI_Run(t *testing.T) {
 				require.Empty(t, workflow.goArgs)
 			},
 		},
-		{name: "missing command", wantError: "a command is required"},
+		{name: "missing command displays help", wantOutput: helpText},
+		{name: "help command", args: []string{"help"}, wantOutput: helpText},
+		{name: "long help flag", args: []string{"--help"}, wantOutput: helpText},
+		{name: "short help flag", args: []string{"-h"}, wantOutput: helpText},
+		{name: "build help flag", args: []string{"build", "--help"}, wantOutput: helpText},
+		{name: "test help flag", args: []string{"test", "-h"}, wantOutput: helpText},
 		{name: "unknown command", args: []string{"lint"}, wantError: `unknown command "lint"`},
 		{name: "build rejects arguments", args: []string{"build", "--debug"}, wantError: "build does not accept arguments"},
+		{name: "help rejects arguments", args: []string{"help", "build"}, wantError: "help does not accept arguments"},
 	}
 
 	for _, test := range tests {
@@ -68,14 +76,17 @@ func TestCLI_Run(t *testing.T) {
 			t.Parallel()
 
 			workflow := &fakeWorkflow{}
-			err := (&CLI{workflow: workflow}).Run(context.Background(), test.args)
+			var output bytes.Buffer
+			err := (&CLI{workflow: workflow, stdout: &output}).Run(context.Background(), test.args)
 			if test.wantError != "" {
 				require.ErrorContains(t, err, test.wantError)
 				return
 			}
 			require.NoError(t, err)
-			require.NotNil(t, test.assert)
-			test.assert(t, workflow)
+			require.Equal(t, test.wantOutput, output.String())
+			if test.assert != nil {
+				test.assert(t, workflow)
+			}
 		})
 	}
 }
