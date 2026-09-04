@@ -64,7 +64,7 @@ func TestInstall_SuccessfulDownload(t *testing.T) {
 	require.NoError(t, err, "Terraform version check should work")
 
 	// Verify global terraform directory was created with expected files
-	globalBinary := filepath.Join(globalTmpDir, "terraform")
+	globalBinary := filepath.Join(globalTmpDir, terraformExecutableName())
 	globalMarker := filepath.Join(globalTmpDir, ".terraform-ready")
 
 	_, err = os.Stat(globalBinary)
@@ -106,7 +106,7 @@ func TestInstall_GlobalBinaryReuse(t *testing.T) {
 	require.NotNil(t, tf1)
 
 	// Verify global files exist after first install
-	globalBinary := filepath.Join(globalTmpDir, "terraform")
+	globalBinary := filepath.Join(globalTmpDir, terraformExecutableName())
 	globalMarker := filepath.Join(globalTmpDir, ".terraform-ready")
 
 	_, err = os.Stat(globalBinary)
@@ -180,7 +180,7 @@ func TestInstall_MultipleConcurrentCallsUseSameBinary(t *testing.T) {
 	require.NoError(t, err, "Second terraform instance should work")
 
 	// Verify only one set of global files exists
-	globalBinary := filepath.Join(globalTmpDir, "terraform")
+	globalBinary := filepath.Join(globalTmpDir, terraformExecutableName())
 	globalMarker := filepath.Join(globalTmpDir, ".terraform-ready")
 
 	_, err = os.Stat(globalBinary)

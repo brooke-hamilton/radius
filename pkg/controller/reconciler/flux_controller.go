@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 
@@ -196,7 +195,7 @@ func (r *FluxController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	logger.Info("Successfully fetched artifact", "url", artifact.URL)
 
 	// Check if the radius-gitops-config.yaml file exists
-	_, err = r.FileSystem.Stat(filepath.Join(tmpDir, radiusConfigFileName))
+	_, err = r.FileSystem.Stat(path.Join(tmpDir, radiusConfigFileName))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// No radius-gitops-config.yaml found in the repository, safe to ignore

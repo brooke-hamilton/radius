@@ -18,9 +18,11 @@ package terraform
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	reflect "reflect"
+	goruntime "runtime"
 	"testing"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
@@ -90,7 +92,7 @@ func TestDeleteSkipsOutputMappingValidation(t *testing.T) {
 	commandLog := filepath.Join(t.TempDir(), "terraform-commands.log")
 	t.Setenv(terraformCommandLog, commandLog)
 
-	require.NoError(t, os.Symlink(os.Args[0], filepath.Join(globalDir, "terraform")))
+	installTerraformTestHelper(t, filepath.Join(globalDir, terraformExecutableName()))
 	require.NoError(t, os.WriteFile(filepath.Join(globalDir, ".terraform-ready"), nil, 0644))
 
 	globalTerraformMutex.Lock()
@@ -139,6 +141,24 @@ func TestDeleteSkipsOutputMappingValidation(t *testing.T) {
 	commands, err := os.ReadFile(commandLog)
 	require.NoError(t, err)
 	require.Contains(t, string(commands), "destroy\n")
+}
+
+func installTerraformTestHelper(t *testing.T, target string) {
+	t.Helper()
+
+	if goruntime.GOOS != "windows" {
+		require.NoError(t, os.Symlink(os.Args[0], target))
+		return
+	}
+
+	source, err := os.Open(os.Args[0])
+	require.NoError(t, err)
+	defer source.Close()
+	destination, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0755)
+	require.NoError(t, err)
+	defer destination.Close()
+	_, err = io.Copy(destination, source)
+	require.NoError(t, err)
 }
 
 func TestGenerateConfig(t *testing.T) {
@@ -317,7 +337,8 @@ func Test_GetTerraformConfig_InvalidDirectory(t *testing.T) {
 
 	_, err := getTerraformConfig(t.Context(), workingDir, options)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "error creating file: open invalid-directory/main.tf.json: no such file or directory")
+	require.ErrorContains(t, err, "error creating file")
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestSetEnvironmentVariables(t *testing.T) {

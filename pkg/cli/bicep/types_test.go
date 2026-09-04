@@ -252,16 +252,24 @@ func Test_downloadTemplate_EncodedBackslashStaysInTempDir(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Chdir(t.TempDir())
+	tempRoot := t.TempDir()
+	t.Setenv("TMPDIR", tempRoot)
+	t.Setenv("TMP", tempRoot)
+	t.Setenv("TEMP", tempRoot)
 
 	i := newTestImpl()
 	localPath, cleanup, err := i.downloadTemplate(t.Context(), server.URL+"/..%5C..%5Capp.bicep")
 	require.NoError(t, err)
 	defer cleanup()
 
-	require.Equal(t, "app.bicep", filepath.Base(localPath))
-	require.NotContains(t, localPath, `\`)
-	require.NotContains(t, localPath, "..")
+	relativePath, err := filepath.Rel(tempRoot, localPath)
+	require.NoError(t, err)
+	require.NotContains(t, relativePath, "..")
+	require.Equal(t, "app.bicep", filepath.Base(relativePath))
+
+	actualContent, err := os.ReadFile(localPath)
+	require.NoError(t, err)
+	require.Equal(t, content, actualContent)
 }
 
 func Test_PrepareTemplate_RemoteJSON(t *testing.T) {

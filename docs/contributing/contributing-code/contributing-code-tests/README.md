@@ -35,6 +35,10 @@ make test
 
 `make test` runs the Go unit tests under `./pkg/...` and the Helm chart unit tests. We require unit tests for new code and for fixes or refactors of existing code; as a rule, every PR should add or change some tests. Unit tests must run with only the [basic prerequisites](../contributing-code-prerequisites/) installed — do not add external dependencies for a unit test; write an integration test instead.
 
+The prototype cross-platform development CLI provides the equivalent complete test workflow without requiring Make or Bash: run `./dev test` on macOS or Linux, or `.\dev test` from PowerShell or cmd on Windows. It provisions the pinned envtest assets, installs the pinned `helm-unittest` plugin when needed, runs the Helm chart tests and portable manage-installation behavior checks, then runs `./pkg/...` and `./test/validation/...` through `gotestsum`.
+
+Arguments before `--` are forwarded to `gotestsum`; arguments after `--` are forwarded to `go test`. For example, `./dev test --junitfile ./dist/unit_test/results.xml -- -race -coverprofile ./dist/unit_test/ut_coverage.out` works on macOS and Linux, and the same arguments can be passed to `.\dev test` on Windows.
+
 To compile every test without running them, use `make test-compile`.
 
 ### Integration tests
@@ -86,6 +90,7 @@ When you are iterating on control-plane images (for example the applications res
 ## Verification
 
 - A passing run prints `ok` for every package that has tests and `[no test files]` for those that don't; `go test` exits non-zero if any test fails, so a failure is obvious in the output.
+- A passing `./dev test` or `.\dev test` run also reports the Helm and manage-installation checks before the Go test summary.
 - We measure code coverage as part of the PR process because it shows whether the right tests are being added.
 
 ## Troubleshooting

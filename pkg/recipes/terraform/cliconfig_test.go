@@ -19,6 +19,7 @@ package terraform
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/radius-project/radius/pkg/corerp/datamodel"
@@ -144,9 +145,11 @@ func TestWriteTerraformCLIConfig_ProviderInstallation(t *testing.T) {
 				require.NotContains(t, body, absent)
 			}
 
-			info, err := os.Stat(path)
-			require.NoError(t, err)
-			require.Equal(t, terraformCLIConfigFileMode, info.Mode().Perm())
+			if runtime.GOOS != "windows" {
+				info, err := os.Stat(path)
+				require.NoError(t, err)
+				require.Equal(t, terraformCLIConfigFileMode, info.Mode().Perm())
+			}
 		})
 	}
 }
@@ -255,9 +258,11 @@ func TestWriteTerraformCLIConfig_Credentials(t *testing.T) {
 				require.Contains(t, string(body), want)
 			}
 
-			info, err := os.Stat(path)
-			require.NoError(t, err)
-			require.Equal(t, terraformCLIConfigFileMode, info.Mode().Perm())
+			if runtime.GOOS != "windows" {
+				info, err := os.Stat(path)
+				require.NoError(t, err)
+				require.Equal(t, terraformCLIConfigFileMode, info.Mode().Perm())
+			}
 		})
 	}
 }

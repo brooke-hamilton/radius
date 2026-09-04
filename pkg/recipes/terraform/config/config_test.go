@@ -19,7 +19,6 @@ package config
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1135,7 +1134,7 @@ func Test_Save_ConfigFileReadOnly(t *testing.T) {
 	// Assert that Save returns an error.
 	err = tfconfig.Save(t.Context(), testDir)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "permission denied")
+	require.ErrorIs(t, err, os.ErrPermission)
 }
 
 func Test_Save_InvalidWorkingDir(t *testing.T) {
@@ -1147,5 +1146,6 @@ func Test_Save_InvalidWorkingDir(t *testing.T) {
 
 	err = tfconfig.Save(t.Context(), testDir)
 	require.Error(t, err)
-	require.Equal(t, fmt.Sprintf("error creating file: open %s/main.tf.json: no such file or directory", testDir), err.Error())
+	require.ErrorContains(t, err, "error creating file")
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

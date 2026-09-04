@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ -n "${GOOS+x}" ]]; then
+    export RADIUS_DEV_GOOS="${GOOS}"
+    unset GOOS
+fi
+if [[ -n "${GOARCH+x}" ]]; then
+    export RADIUS_DEV_GOARCH="${GOARCH}"
+    unset GOARCH
+fi
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
+exec go run ./cmd/dev "$@"

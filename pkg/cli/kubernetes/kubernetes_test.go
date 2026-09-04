@@ -152,7 +152,7 @@ users:
 			name:       "try to get non-existing config file",
 			configFile: "non-existing",
 			in:         "",
-			err:        errors.New("open non-existing: no such file or directory"),
+			err:        os.ErrNotExist,
 		},
 	}
 
@@ -160,7 +160,11 @@ users:
 		t.Run(tc.name, func(t *testing.T) {
 			contextName, err := GetContextFromConfigFileIfExists(tc.configFile, tc.in)
 			if tc.err != nil {
-				require.ErrorContains(t, err, tc.err.Error())
+				if errors.Is(tc.err, os.ErrNotExist) {
+					require.ErrorIs(t, err, os.ErrNotExist)
+				} else {
+					require.ErrorContains(t, err, tc.err.Error())
+				}
 			} else {
 				require.NoError(t, err)
 				require.Equal(t, tc.out, contextName)

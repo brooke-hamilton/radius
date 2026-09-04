@@ -216,7 +216,7 @@ func setupFluxControllerTest(t *testing.T, opts setupFluxControllerTestOptions, 
 					if err != nil {
 						return err
 					}
-					dstPath := filepath.Join(dir, relPath)
+					dstPath := path.Join(dir, filepath.ToSlash(relPath))
 					if info.IsDir() {
 						return fs.MkdirAll(dstPath, 0755)
 					}

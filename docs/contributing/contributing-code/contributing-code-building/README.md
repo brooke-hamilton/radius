@@ -25,6 +25,8 @@ make build
 
 This runs `build-packages`, `build-binaries`, and `build-bicep`. The first run may take a few minutes because it downloads and builds dependencies; later builds reuse cached output. Binaries are written to `./dist/<GOOS>_<GOARCH>/release/`.
 
+The repository also includes a prototype cross-platform development CLI that performs the same complete build without requiring Make or Bash. Run `./dev build` on macOS or Linux, or `.\dev build` from PowerShell or cmd on Windows. Both launchers invoke the same Go implementation, build all packages and configured binaries for the selected `GOOS` and `GOARCH`, embed the same version metadata, and stage the checksum-verified Linux Bicep payload under `./dist/<GOOS>_<GOARCH>/release/bicep/`.
+
 To build a single binary instead of everything — useful when iterating on the CLI — use its `build-<name>` target. For example, to build only the `rad` CLI:
 
 ```sh
@@ -36,6 +38,8 @@ To build with debug symbols (`-gcflags "all=-N -l"`), set `DEBUG=1`:
 ```sh
 DEBUG=1 make build-rad
 ```
+
+The development CLI reads the same build environment variables. For example, run `DEBUG=1 ./dev build` on macOS or Linux, or `$env:DEBUG=1; .\dev build` in PowerShell, to write unoptimized binaries under `./dist/<GOOS>_<GOARCH>/debug/`.
 
 ### Build, test, lint, and check formatting
 
@@ -102,6 +106,7 @@ This runs several generators in sequence and may take a few minutes. **Commit** 
 ## Verification
 
 - `make build` completes without errors and produces binaries under `./dist/<GOOS>_<GOARCH>/release/` (for example `rad`, `applications-rp`, `ucpd`, `dynamic-rp`, `controller`).
+- `./dev build` on macOS or Linux, or `.\dev build` on Windows, produces the same package, binary, metadata, and Bicep payload outputs without invoking Make or Bash.
 - `make build test lint format-check` passes end to end.
 - After `make docker-build`, the images appear in `docker images`.
 - After `make generate`, `git status` shows only the generated changes you expect, and no generated files remain stale.

@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -59,9 +61,22 @@ type InstallOptions struct {
 // getGlobalTerraformPaths returns the terraform paths, allowing override for testing
 func getGlobalTerraformPaths() (dir, binary, marker string) {
 	if testDir := os.Getenv("TERRAFORM_TEST_GLOBAL_DIR"); testDir != "" {
-		return testDir, testDir + "/terraform", testDir + "/.terraform-ready"
+		return testDir, filepath.Join(testDir, terraformExecutableName()), filepath.Join(testDir, ".terraform-ready")
+	}
+	if runtime.GOOS == "windows" {
+		dir := filepath.FromSlash(defaultGlobalTerraformDir)
+		return dir,
+			filepath.Join(dir, terraformExecutableName()),
+			filepath.Join(dir, ".terraform-ready")
 	}
 	return defaultGlobalTerraformDir, defaultGlobalTerraformBinary, defaultGlobalMarkerFile
+}
+
+func terraformExecutableName() string {
+	if runtime.GOOS == "windows" {
+		return "terraform.exe"
+	}
+	return "terraform"
 }
 
 var (

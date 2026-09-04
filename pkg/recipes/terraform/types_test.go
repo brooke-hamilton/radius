@@ -43,17 +43,11 @@ func TestNewTerraform_Success(t *testing.T) {
 }
 
 func TestNewTerraform_InvalidDir(t *testing.T) {
-	// Create a temporary directory for testing.
 	testDir := t.TempDir()
-	// Create a read-only directory within the temporary directory.
-	readOnlyDir := filepath.Join(testDir, "read-only-dir")
-	err := os.MkdirAll(readOnlyDir, 0555)
-	require.NoError(t, err)
+	filePath := filepath.Join(testDir, "not-a-directory")
+	require.NoError(t, os.WriteFile(filePath, nil, 0600))
 
-	execPath := filepath.Join(testDir, "terraform")
-
-	// Call NewTerraform with read only root directory.
-	_, err = NewTerraform(t.Context(), readOnlyDir, execPath)
+	_, err := NewTerraform(t.Context(), filePath, filepath.Join(testDir, terraformExecutableName()))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to create working directory for terraform execution")
 }
@@ -83,17 +77,12 @@ func TestCreateWorkingDir_Created(t *testing.T) {
 }
 
 func TestCreateWorkingDir_Error(t *testing.T) {
-	// Create a temporary directory for testing.
 	testDir := t.TempDir()
-	// Create a read-only directory within the temporary directory.
-	readOnlyDir := filepath.Join(testDir, "read-only-dir")
-	err := os.MkdirAll(readOnlyDir, 0555)
-	require.NoError(t, err)
+	filePath := filepath.Join(testDir, "not-a-directory")
+	require.NoError(t, os.WriteFile(filePath, nil, 0600))
 
-	// Call createWorkingDir with the read-only directory.
-	_, err = createWorkingDir(t.Context(), readOnlyDir)
+	_, err := createWorkingDir(t.Context(), filePath)
 
-	// Assert that createWorkingDir returns an error.
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to create working directory")
 }

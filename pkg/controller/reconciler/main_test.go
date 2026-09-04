@@ -97,7 +97,7 @@ func TestMain(m *testing.M) {
 	exitCode := m.Run()
 
 	// Note: CANNOT use defer here because os.Exit won't run defers.
-	err = env.Stop()
+	err = stopTestEnvironment(env)
 	if err != nil {
 		panic("failed to stop envtest" + err.Error())
 	}
