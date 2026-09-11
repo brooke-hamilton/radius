@@ -1,5 +1,5 @@
 # This file marks typespec/ as the pnpm workspace root so that the per-service
-# `cd typespec/<service> && pnpm exec tsp compile .` calls in build/generate.mk
+# `cd typespec/<service> && $(PNPM) exec tsp compile .` calls in build/generate.mk
 # resolve the TypeSpec compiler from typespec/node_modules.
 #
 # Do NOT add a `packages:` field here. Declaring workspace members turns the

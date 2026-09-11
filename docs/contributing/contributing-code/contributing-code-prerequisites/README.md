@@ -133,14 +133,15 @@ Optional tools the team recommends for debugging Kubernetes:
 
 `make generate` updates the OpenAPI specs and the generated Go client/server code, along with generated mocks and Kubernetes API types. If `make generate` fails, you are probably missing the TypeSpec toolchain.
 
-The toolchain is driven by `pnpm`, which Radius provisions through [Corepack](https://nodejs.org/api/corepack.html) (bundled with Node.js) so everyone uses the version pinned in `package.json`. Enable it once, then install the toolchain from the repository root:
+The toolchain is driven by `pnpm`. The repository's [Node.js launcher](../../../../build/scripts/pnpm.cjs) reads the exact version from the root `package.json` and runs it through `npm exec` on macOS, Windows, and Linux. Install Node.js (including npm); no Corepack or global pnpm installation is needed. From the repository root, run:
 
 ```bash
-corepack enable pnpm
-pnpm -C typespec install
+node build/scripts/pnpm.cjs -C typespec install
 ```
 
-> 📝 **Note** — `mockgen` and `controller-gen` are managed as Go tool dependencies (the `tool` directives in [go.mod](../../../../go.mod)) and are invoked via `go tool mockgen` and `go tool controller-gen`, so they do not require a separate `go install`. `autorest` and `oav` are devDependencies in [typespec/package.json](../../../../typespec/package.json) and are invoked via `pnpm -C typespec exec`. No global installation is needed.
+The same launcher accepts other pnpm commands, such as `node build/scripts/pnpm.cjs --version` and `node build/scripts/pnpm.cjs install --frozen-lockfile`. Make targets use it automatically. The first invocation downloads the pinned pnpm into npm's cache; subsequent invocations reuse it. Updating `packageManager` in the root `package.json` changes the version used by the launcher.
+
+> 📝 **Note** — `mockgen` and `controller-gen` are managed as Go tool dependencies (the `tool` directives in [go.mod](../../../../go.mod)) and are invoked via `go tool mockgen` and `go tool controller-gen`, so they do not require a separate `go install`. `autorest` and `oav` are devDependencies in [typespec/package.json](../../../../typespec/package.json) and are invoked via `node build/scripts/pnpm.cjs -C typespec exec`. No global installation is needed.
 
 ## Verification
 
@@ -163,7 +164,7 @@ This regenerates the API clients and server code with no errors.
 ## Troubleshooting
 
 - **`make build` or `make lint` fails on a missing tool.** Re-check the [core dependencies](#core-dependencies) — a container-based setup installs them all for you.
-- **`make generate` fails.** Install the TypeSpec toolchain with `pnpm -C typespec install` (see [Install code-generation tools](#install-code-generation-tools)).
+- **`make generate` fails.** Install the TypeSpec toolchain with `node build/scripts/pnpm.cjs -C typespec install` (see [Install code-generation tools](#install-code-generation-tools)).
 - **The dev container won't build or open.** Confirm Docker is installed and running, then retry **Reopen in Container**. For background, see the [VS Code dev containers docs](https://code.visualstudio.com/docs/devcontainers/containers).
 - **Still stuck?** Ask for help in our [forum](https://discordapp.com/channels/1113519723347456110/1115302284356767814), or [open an issue](https://github.com/radius-project/radius/issues/new/choose).
 

@@ -116,8 +116,8 @@ jobs:
         # Version pinned in build/tools.yaml (KUBECTL_VERSION).
         run: make install-kubectl
 
-      - name: Install pnpm and TypeSpec tooling
-        # `make generate-tsp-installed` enables corepack with the pinned pnpm
+      - name: Prepare pnpm and install TypeSpec tooling
+        # `make generate-tsp-installed` uses npm exec with the pinned pnpm
         # version and installs the TypeSpec toolchain in the typespec/ workspace,
         # warming the cache for the TypeSpec -> OpenAPI -> Go generation pipeline.
         run: make generate-tsp-installed
@@ -130,7 +130,7 @@ jobs:
         run: |
           PNPM_HOME="${RUNNER_TEMP}/pnpm"
           mkdir -p "${PNPM_HOME}"
-          pnpm config set global-bin-dir "${PNPM_HOME}"
+          node build/scripts/pnpm.cjs config set global-bin-dir "${PNPM_HOME}"
           echo "PNPM_HOME=${PNPM_HOME}" >> "${GITHUB_ENV}"
           echo "${PNPM_HOME}" >> "${GITHUB_PATH}"
 
@@ -138,7 +138,7 @@ jobs:
         # Spell-check tooling used by `make spellcheck`, which requires `cspell`
         # on PATH (provided by the pnpm global bin directory configured above).
         run: |
-          pnpm add -g cspell
+          node build/scripts/pnpm.cjs add -g cspell
           cspell --version
 
       - name: Install golangci-lint

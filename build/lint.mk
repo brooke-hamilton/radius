@@ -66,14 +66,14 @@ spellcheck: ## Runs spellcheck on the repository.
 
 .PHONY: format-check
 format-check: generate-pnpm-installed ## Checks the formatting of JSON files.
-	@pnpm install --frozen-lockfile
+	@$(PNPM) install --frozen-lockfile
 	@echo "$(ARROW) Checking for formatting issues using prettier..."
 	@echo ""
-	@pnpm exec prettier --config ./.github/linters/.prettierrc.yml --check "*/**/*.{js,cjs,mjs,ts,tsx,jsx,json,jsonc}"
+	@$(PNPM) exec prettier --config ./.github/linters/.prettierrc.yml --check "*/**/*.{js,cjs,mjs,ts,tsx,jsx,json,jsonc}"
 
 .PHONY: format-write
 format-write: generate-pnpm-installed ## Updates the formatting of JSON files.
-	@pnpm install --frozen-lockfile
+	@$(PNPM) install --frozen-lockfile
 	@echo "$(ARROW) Reformatting files using prettier..."
 	@echo ""
-	@pnpm exec prettier --config ./.github/linters/.prettierrc.yml --write "*/**/*.{js,cjs,mjs,ts,tsx,jsx,json,jsonc}"
+	@$(PNPM) exec prettier --config ./.github/linters/.prettierrc.yml --write "*/**/*.{js,cjs,mjs,ts,tsx,jsx,json,jsonc}"

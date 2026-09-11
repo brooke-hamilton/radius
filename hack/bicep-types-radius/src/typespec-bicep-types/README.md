@@ -73,9 +73,9 @@ Modules still to come with the body-translation increments: `flatten.ts` and `wr
 ## Develop
 
 ```bash
-pnpm -C hack/bicep-types-radius/src/typespec-bicep-types install
-pnpm -C hack/bicep-types-radius/src/typespec-bicep-types build
-pnpm -C hack/bicep-types-radius/src/typespec-bicep-types test
+node build/scripts/pnpm.cjs -C hack/bicep-types-radius/src/typespec-bicep-types install
+node build/scripts/pnpm.cjs -C hack/bicep-types-radius/src/typespec-bicep-types build
+node build/scripts/pnpm.cjs -C hack/bicep-types-radius/src/typespec-bicep-types test
 ```
 
-The toolchain follows the repo: Node 24 (root [`.node-version`](../../../../.node-version)) via fnm/corepack, with pnpm as the package manager.
+Run these commands from the repository root with Node.js and npm installed. The launcher uses the pnpm version pinned in the root `package.json` through `npm exec`; no global pnpm installation is needed. The Node.js version follows the root `.node-version`.

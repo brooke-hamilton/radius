@@ -17,6 +17,7 @@
 ##@ Generate (Code and Schema Generation)
 
 GOOS ?= $(shell go env GOOS)
+PNPM := node "$(abspath build/scripts/pnpm.cjs)"
 
 ifeq ($(GOOS),windows)
    CMD_EXT = .cmd
@@ -29,34 +30,33 @@ generate: generate-cleanup generate-rad-corerp-client generate-rad-corerp-client
 .PHONY: generate-tsp-installed
 generate-tsp-installed: generate-pnpm-installed
 	@echo "$(ARROW) Detecting tsp..."
-	@pnpm -C typespec exec tsp --help > /dev/null 2>&1 || { \
+	@$(PNPM) -C typespec exec tsp --help > /dev/null 2>&1 || { \
 		echo "$(ARROW) TypeSpec not found. Installing TypeSpec dependencies..."; \
-		pnpm -C typespec install --frozen-lockfile --config.confirm-modules-purge=false; \
+		$(PNPM) -C typespec install --frozen-lockfile --config.confirm-modules-purge=false; \
 	}
 	@echo "$(ARROW) OK"
 
 .PHONY: generate-pnpm-installed
 generate-pnpm-installed: generate-node-installed
-	@echo "$(ARROW) Setting up pnpm via corepack..."
-	@corepack enable pnpm
-	@corepack install
+	@echo "$(ARROW) Preparing pinned pnpm via npm exec..."
+	@$(PNPM) --version
 	@echo "$(ARROW) OK"
 
 .PHONY: tsp-format-check
 tsp-format-check: generate-tsp-installed ## Checks TypeSpec format
 	@echo "$(ARROW) Checking TypeSpec format..."
-	pnpm -C typespec exec tsp format --check "**/*.tsp"
+	$(PNPM) -C typespec exec tsp format --check "**/*.tsp"
 	@echo "$(ARROW) OK"
 
 .PHONY: generate-openapi-spec
 generate-openapi-spec: # Generates all Radius OpenAPI specs from TypeSpec.
 	@echo  "Generating openapi specs from typespec models."
-	cd typespec/UCP && pnpm exec tsp compile .
-	cd typespec/Applications.Core && pnpm exec tsp compile .
-	cd typespec/Applications.Dapr && pnpm exec tsp compile .
-	cd typespec/Applications.Messaging && pnpm exec tsp compile .
-	cd typespec/Applications.Datastores && pnpm exec tsp compile .
-	cd typespec/Radius.Core && pnpm exec tsp compile .
+	cd typespec/UCP && $(PNPM) exec tsp compile .
+	cd typespec/Applications.Core && $(PNPM) exec tsp compile .
+	cd typespec/Applications.Dapr && $(PNPM) exec tsp compile .
+	cd typespec/Applications.Messaging && $(PNPM) exec tsp compile .
+	cd typespec/Applications.Datastores && $(PNPM) exec tsp compile .
+	cd typespec/Radius.Core && $(PNPM) exec tsp compile .
 
 .PHONY: generate-node-installed
 generate-node-installed:
@@ -89,7 +89,7 @@ define generate-typespec-go-client
 @set -e; \
 	output_dir=$$(mktemp -d "$${TMPDIR:-/tmp}/radius-typespec-go.XXXXXX"); \
 	trap 'rm -rf "$$output_dir"' EXIT; \
-	(cd "$(1)" && pnpm exec tsp compile . --emit=@azure-tools/typespec-go --option="@azure-tools/typespec-go.emitter-output-dir=$$output_dir"); \
+	(cd "$(1)" && $(PNPM) exec tsp compile . --emit=@azure-tools/typespec-go --option="@azure-tools/typespec-go.emitter-output-dir=$$output_dir"); \
 	rm -f "$(2)"/zz_generated_*.go; \
 	cp "$$output_dir"/zz_generated_*.go "$(2)/"; \
 	if [ "$(3)" = "true" ]; then \
@@ -179,7 +179,7 @@ generate-bicep-types: ## Generate Bicep extensibility types
 .PHONY: generate-bicep-types-emitter
 generate-bicep-types-emitter: generate-pnpm-installed
 	@echo "$(ARROW) Build the TypeSpec Bicep emitter..."
-	CI=true pnpm -C $(BICEP_TYPES_EMITTER_DIR) install && pnpm -C $(BICEP_TYPES_EMITTER_DIR) run build
+	CI=true $(PNPM) -C $(BICEP_TYPES_EMITTER_DIR) install && $(PNPM) -C $(BICEP_TYPES_EMITTER_DIR) run build
 
 .PHONY: generate-bicep-types-core
 generate-bicep-types-core: generate-tsp-installed generate-bicep-types-emitter ## Generate Bicep extensibility types from TypeSpec.

@@ -6,7 +6,7 @@ This guide explains how to make a change to the Radius REST API — for example 
 
 ## Prerequisites
 
-- The standard build prerequisites from [contributing-code-prerequisites](../contributing-code-prerequisites/README.md): Go, Node.js, and `pnpm` (enabled through `corepack`). The TypeSpec compiler (`tsp`) and emitters are installed into [`typespec/`](../../../../typespec/) on first use by the `make generate` targets, so no global install is needed.
+- The standard build prerequisites from [contributing-code-prerequisites](../contributing-code-prerequisites/README.md): Go and Node.js with npm. The repository's `node build/scripts/pnpm.cjs` launcher runs the pnpm version pinned in the root `package.json` through `npm exec`. The TypeSpec compiler (`tsp`) and emitters are installed into [`typespec/`](../../../../typespec/) on first use by the `make generate` targets, so no global install is needed.
 - A working clone of the repo where you can run `make` targets. `make generate` runs the `tsp` toolchain and `go generate` (mocks), so a working Go and Node toolchain is required.
 - Familiarity with the namespace you are changing. Each API namespace has its own folder under [`typespec/`](../../../../typespec/) (for example `typespec/Applications.Core`, `typespec/Radius.Core`, `typespec/UCP`).
 
@@ -21,7 +21,7 @@ This guide explains how to make a change to the Radius REST API — for example 
    make tsp-format-check
    ```
 
-   This runs `pnpm -C typespec exec tsp format --check "**/*.tsp"`. To apply the formatter instead of just checking, run `pnpm -C typespec exec tsp format "**/*.tsp"` from the repo root.
+   This runs `node build/scripts/pnpm.cjs -C typespec exec tsp format --check "**/*.tsp"`. To apply the formatter instead of just checking, run `node build/scripts/pnpm.cjs -C typespec exec tsp format "**/*.tsp"` from the repo root.
 
 ### 2. Generate the OpenAPI specs and Go clients
 
@@ -43,7 +43,7 @@ You normally only need `make generate`. To regenerate one namespace by hand, run
 1. Compile the OpenAPI spec for one namespace:
 
    ```bash
-   cd typespec/Applications.Core && pnpm exec tsp compile .
+   (cd typespec/Applications.Core && node ../../build/scripts/pnpm.cjs exec tsp compile .)
    ```
 
 2. Generate and copy the Go client for that namespace with its Make target:
@@ -116,8 +116,8 @@ To confirm your schema compiles in a Bicep template, publish the generated Bicep
 
 ## Troubleshooting
 
-- **`tsp` or `pnpm` not found.** `make generate` installs the TypeSpec toolchain into `typespec/` via `corepack`. Ensure Node.js is installed and on your `PATH`, then re-run `make generate` (or `make generate-tsp-installed`). See [contributing-code-prerequisites](../contributing-code-prerequisites/README.md).
-- **`make tsp-format-check` fails.** Run `pnpm -C typespec exec tsp format "**/*.tsp"` to apply the formatter, then re-run the check.
+- **`tsp` or npm not found.** `make generate` installs the TypeSpec toolchain into `typespec/` using the pnpm launcher. Ensure Node.js and npm are installed and on your `PATH`, then re-run `make generate` (or `make generate-tsp-installed`). See [contributing-code-prerequisites](../contributing-code-prerequisites/README.md).
+- **`make tsp-format-check` fails.** Run `node build/scripts/pnpm.cjs -C typespec exec tsp format "**/*.tsp"` to apply the formatter, then re-run the check.
 - **Generated files keep reappearing as changes.** Generated `zz_generated_*.go` and `openapi.json` files are committed artifacts. Run `make generate`, then commit the regenerated output so it matches your TypeSpec.
 - **`make publish-bicep-extension` errors that the index does not exist.** Run `make generate-bicep-types` first; the target publishes `hack/bicep-types-radius/generated/index.json`, which that command creates.
 - **`make publish-bicep-extension` cannot find `bicep`.** Install the [Bicep CLI](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install) and ensure it is on your `PATH`, or use the binary at `~/.rad/bin/bicep` from a Radius CLI install.

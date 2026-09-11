@@ -18,8 +18,8 @@ Markdown quality is enforced by two tools, both installed as dev dependencies in
 
 ## Prerequisites
 
-1. **Node.js + pnpm**: pnpm is pinned via the `packageManager` field in `package.json`. If pnpm is missing, run `corepack enable pnpm`.
-2. **Install dependencies**: run `pnpm install --frozen-lockfile` from the repository root so the tool binaries are available.
+1. **Node.js + npm**: the `node build/scripts/pnpm.cjs` launcher runs pnpm through `npm exec`, using the `packageManager` pin in the root `package.json`. No global pnpm installation is needed.
+2. **Install dependencies**: run `node build/scripts/pnpm.cjs install --frozen-lockfile` from the repository root so the tool binaries are available.
 
 ## Procedure
 
@@ -37,10 +37,10 @@ Run both tools in check mode. Replace `<glob-or-paths>` with the scope from Step
 
 ```bash
 # Check table formatting (exits non-zero if any table needs reformatting)
-pnpm exec markdown-table-formatter "<glob-or-paths>" --check
+node build/scripts/pnpm.cjs exec markdown-table-formatter "<glob-or-paths>" --check
 
 # Check markdownlint rules
-pnpm exec markdownlint-cli2 "<glob-or-paths>" --config "./.github/linters/.markdownlint-cli2.yaml"
+node build/scripts/pnpm.cjs exec markdownlint-cli2 "<glob-or-paths>" --config "./.github/linters/.markdownlint-cli2.yaml"
 ```
 
 ### Step 3: Fix
@@ -49,10 +49,10 @@ Apply automatic fixes, then re-run the checks in Step 2 to confirm a clean resul
 
 ```bash
 # Reformat tables in place
-pnpm exec markdown-table-formatter "<glob-or-paths>"
+node build/scripts/pnpm.cjs exec markdown-table-formatter "<glob-or-paths>"
 
 # Auto-fix markdownlint violations where possible
-pnpm exec markdownlint-cli2 "<glob-or-paths>" --config "./.github/linters/.markdownlint-cli2.yaml" --fix
+node build/scripts/pnpm.cjs exec markdownlint-cli2 "<glob-or-paths>" --config "./.github/linters/.markdownlint-cli2.yaml" --fix
 ```
 
 ### Step 4: Resolve remaining issues
@@ -65,10 +65,10 @@ Summarize what was checked, what was fixed automatically, and any violations tha
 
 ## Quick Reference
 
-| Goal                        | Command                                                                                           |
-|-----------------------------|---------------------------------------------------------------------------------------------------|
-| Check table formatting      | `pnpm exec markdown-table-formatter "<glob>" --check`                                             |
-| Fix table formatting        | `pnpm exec markdown-table-formatter "<glob>"`                                                     |
-| Check markdownlint rules    | `pnpm exec markdownlint-cli2 "<glob>" --config "./.github/linters/.markdownlint-cli2.yaml"`       |
-| Fix markdownlint rules      | `pnpm exec markdownlint-cli2 "<glob>" --config "./.github/linters/.markdownlint-cli2.yaml" --fix` |
-| List changed Markdown files | `git diff --name-only --diff-filter=d HEAD '*.md'`                                                |
+| Goal                        | Command                                                                                                                  |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| Check table formatting      | `node build/scripts/pnpm.cjs exec markdown-table-formatter "<glob>" --check`                                             |
+| Fix table formatting        | `node build/scripts/pnpm.cjs exec markdown-table-formatter "<glob>"`                                                     |
+| Check markdownlint rules    | `node build/scripts/pnpm.cjs exec markdownlint-cli2 "<glob>" --config "./.github/linters/.markdownlint-cli2.yaml"`       |
+| Fix markdownlint rules      | `node build/scripts/pnpm.cjs exec markdownlint-cli2 "<glob>" --config "./.github/linters/.markdownlint-cli2.yaml" --fix` |
+| List changed Markdown files | `git diff --name-only --diff-filter=d HEAD '*.md'`                                                                       |
