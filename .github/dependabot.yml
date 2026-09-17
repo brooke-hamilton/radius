@@ -83,6 +83,25 @@ updates:
         patterns:
           - "*"
 
+  - package-ecosystem: docker
+    directories:
+      - "/"
+      - "/**/*"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    groups:
+      docker:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
   - package-ecosystem: devcontainers
     directory: "/"
     schedule:
