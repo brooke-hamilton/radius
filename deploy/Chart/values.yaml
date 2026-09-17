@@ -40,10 +40,7 @@ global:
     path: "/metrics"
     port: 9090
   #
-  # Configure global.zipkin.url to enable distributed trace. Replace the example url
-  # below with the environment specific url
-  # zipkin:
-  #   url: "http://jaeger-collector.radius-monitoring.svc.cluster.local:9411/api/v2/spans"
+  # Configure global.zipkin.url with an environment-specific Zipkin-compatible endpoint to enable distributed tracing.
   #
 
   # Configure global.azureWorkloadIdentity.enabled=true to enable Azure Workload Identity.
