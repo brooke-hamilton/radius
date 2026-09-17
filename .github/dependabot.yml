@@ -101,10 +101,6 @@ updates:
         applies-to: version-updates
         patterns:
           - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
 
   - package-ecosystem: devcontainers
     directory: "/"
