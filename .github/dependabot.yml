@@ -85,6 +85,7 @@ updates:
 
   - package-ecosystem: docker
     directories:
+      - "/"
       - "/**/*"
     schedule:
       interval: weekly
@@ -95,7 +96,6 @@ updates:
       include: scope
     labels:
       - dependencies
-      - deps/docker
     groups:
       docker:
         applies-to: version-updates
