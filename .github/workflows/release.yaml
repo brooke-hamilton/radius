@@ -166,7 +166,7 @@ jobs:
       # Read and write" on radius, recipes, dashboard, and bicep-types-aws.
       - name: Get App Token for release repositories
         id: app-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.RADIUS_RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RADIUS_RELEASE_BOT_PRIVATE_KEY }}
@@ -329,7 +329,7 @@ jobs:
 
       - name: Get App Token for radius-publisher
         if: success() && steps.release-branch-exists.outputs.result == 'false'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: get-de-token
         with:
           client-id: ${{ secrets.RADIUS_PUBLISHER_BOT_CLIENT_ID }}
